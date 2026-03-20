@@ -1,0 +1,57 @@
+import React, { useState } from 'react';
+import { View, StyleSheet, StatusBar } from 'react-native';
+import OnboardingScreen from './src/screens/OnboardingScreen';
+import DashboardScreen from './src/screens/DashboardScreen';
+import ReportHazardScreen from './src/screens/ReportHazardScreen';
+import WalletScreen from './src/screens/WalletScreen';
+import TabBar from './src/components/TabBar';
+import { colors } from './src/theme/colors';
+
+export default function App() {
+  const [isOnboarded, setIsOnboarded] = useState(false);
+  const [userProfile, setUserProfile] = useState(null);
+  const [activeTab, setActiveTab] = useState('home');
+
+  const handleCompleteOnboarding = (profile) => {
+    setUserProfile(profile);
+    setIsOnboarded(true);
+  };
+
+  const renderScreen = () => {
+    switch(activeTab) {
+      case 'home':
+        return <DashboardScreen userProfile={userProfile} />;
+      case 'hazard':
+        return <ReportHazardScreen />;
+      case 'wallet':
+        return <WalletScreen />;
+      default:
+        return <DashboardScreen userProfile={userProfile} />;
+    }
+  };
+
+  return (
+    <View style={styles.container}>
+      <StatusBar barStyle="light-content" backgroundColor={colors.background} />
+      {!isOnboarded ? (
+        <OnboardingScreen onComplete={handleCompleteOnboarding} />
+      ) : (
+        <View style={styles.appContainer}>
+           {renderScreen()}
+           <TabBar activeTab={activeTab} onTabChange={setActiveTab} />
+        </View>
+      )}
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: colors.background,
+  },
+  appContainer: {
+    flex: 1,
+    position: 'relative'
+  }
+});
