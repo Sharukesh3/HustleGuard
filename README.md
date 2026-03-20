@@ -69,6 +69,8 @@ Premiums will automatically adjust based on the risk profile of the zones the ri
 
 ## 5. System Architecture (From Flowcharts)
 
+![Concept Art 1](Photos/Gemini_Generated_Image_566yub566yub566y.png)
+
 ### Phase 1 — Onboarding
 Gig Worker → React App → Inputs Persona & Zones → **PyTorch Risk Assessment Engine** → Calculates Weekly Premium
 
@@ -90,6 +92,8 @@ Calculate Lost Income Duration → Simulated Payment Gateway (Razorpay/Stripe Mo
 ---
 
 ## 6. Proposed Tech Stack
+
+![Concept Art 2](Photos/Gemini_Generated_Image_g6cjr5g6cjr5g6cj.png)
 | Layer | Technology |
 | :--- | :--- |
 | **Frontend** | React Native (User App) + React (Admin Dashboard) |
@@ -114,4 +118,4 @@ We have chosen a **React Native Mobile App** as the core platform. Q-Commerce gi
   - [x] Tech stack outlined
   - [x] Platform choice justification (Web vs Mobile)
 - [x] GitHub Repository with README.md
-- [ ] 2-minute strategy/prototype video (publicly accessible link)
+- [x] 2-minute strategy/prototype video: [Watch on YouTube](https://youtu.be/dUENxGHLdxc)
