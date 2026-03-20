@@ -92,7 +92,7 @@ const styles = StyleSheet.create({
   secureBadge: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surfaceHighlight, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 10 },
   secureText: { color: colors.primary, fontSize: 12, marginLeft: 4, fontWeight: 'bold' },
   
-  content: { flex: 1, paddingHorizontal: 20 },
+  content: { flex: 1, paddingHorizontal: 20, width: '100%', maxWidth: 600, alignSelf: 'center' },
   balanceCard: { backgroundColor: colors.surface, borderRadius: 24, padding: 30, borderWidth: 1, borderColor: colors.border, marginBottom: 30 },
   cardLabel: { color: colors.textMuted, fontSize: 14, marginBottom: 10 },
   balanceAmount: { color: '#fff', fontSize: 48, fontWeight: 'bold', marginBottom: 10 },

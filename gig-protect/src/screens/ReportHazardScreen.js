@@ -76,7 +76,7 @@ const styles = StyleSheet.create({
   header: { paddingHorizontal: 20, marginBottom: 30 },
   title: { fontSize: 26, fontWeight: 'bold', color: '#fff' },
   subtitle: { fontSize: 15, color: colors.textMuted, marginTop: 10, lineHeight: 22 },
-  content: { flex: 1, paddingHorizontal: 20 },
+  content: { flex: 1, paddingHorizontal: 20, width: '100%', maxWidth: 600, alignSelf: 'center' },
   
   uploadArea: { height: 250, borderRadius: 20, borderWidth: 2, borderColor: colors.border, borderStyle: 'dashed', justifyContent: 'center', alignItems: 'center', overflow: 'hidden' },
   uploadText: { fontSize: 18, color: '#fff', fontWeight: 'bold', marginTop: 20 },

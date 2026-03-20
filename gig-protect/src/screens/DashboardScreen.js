@@ -51,16 +51,16 @@ export default function DashboardScreen({ userProfile }) {
       </View>
 
       <SafeAreaView style={styles.safeArea}>
-        <View style={styles.header}>
-          <View>
-            <Text style={styles.greeting}>Active Shift</Text>
-            <Text style={styles.zoneText}>Zone: {userProfile?.zone.toUpperCase() || 'KORAMANGALA'}</Text>
+          <View style={styles.header}>
+            <View>
+              <Text style={styles.greeting}>Active Shift</Text>
+              <Text style={styles.zoneText}>Zone: {userProfile?.zone.toUpperCase() || 'KORAMANGALA'}</Text>
+            </View>
+            <View style={styles.shieldBadge}>
+              <ShieldCheck color={colors.primary} size={20} />
+              <Text style={styles.badgeText}>Protected</Text>
+            </View>
           </View>
-          <View style={styles.shieldBadge}>
-            <ShieldCheck color={colors.primary} size={20} />
-            <Text style={styles.badgeText}>Protected</Text>
-          </View>
-        </View>
 
         {/* Claim Simulation Status */}
         {claimStatus && (
@@ -90,7 +90,8 @@ export default function DashboardScreen({ userProfile }) {
           </BlurView>
         )}
 
-        <View style={styles.bottomSection}>
+        <View style={styles.contentWrapper}>
+          <View style={styles.bottomSection}>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.statsScroll}>
             <BlurView intensity={40} tint="dark" style={styles.statCard}>
               <Text style={styles.statLabel}>Earnings Protected</Text>
@@ -109,16 +110,17 @@ export default function DashboardScreen({ userProfile }) {
           </ScrollView>
 
           <View style={styles.actionRow}>
-            <TouchableOpacity style={[styles.actionButton, { flex: 1, marginRight: 10 }]} onPress={simulateRain} disabled={isRaining || isDeadZone}>
+            <TouchableOpacity style={[styles.actionButton, { flex: 1, maxWidth: 200, marginRight: 10 }]} onPress={simulateRain} disabled={isRaining || isDeadZone}>
               <CloudRain color="#fff" size={20} style={{ marginBottom: 5 }} />
               <Text style={styles.actionText}>Simulate Rain</Text>
             </TouchableOpacity>
             
-            <TouchableOpacity style={[styles.actionButton, { flex: 1, marginLeft: 10, borderColor: colors.danger }]} onPress={simulateDeadZone} disabled={isRaining || isDeadZone}>
+            <TouchableOpacity style={[styles.actionButton, { flex: 1, maxWidth: 200, marginLeft: 10, borderColor: colors.danger }]} onPress={simulateDeadZone} disabled={isRaining || isDeadZone}>
               <WifiOff color={colors.danger} size={20} style={{ marginBottom: 5 }} />
               <Text style={[styles.actionText, { color: colors.danger }]}>Simulate Outage</Text>
             </TouchableOpacity>
           </View>
+        </View>
         </View>
       </SafeAreaView>
     </View>
@@ -132,6 +134,7 @@ const SafeAreaView = ({ children, style }) => (
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
+  contentWrapper: { flex: 1, width: '100%', justifyContent: 'flex-end', paddingBottom: 20 },
   mapPlaceholder: { ...StyleSheet.absoluteFillObject, backgroundColor: '#09090b', justifyContent: 'center', alignItems: 'center' },
   gridOverlay: { ...StyleSheet.absoluteFillObject, opacity: 0.1, borderWidth: 1, borderColor: '#3f3f46', borderStyle: 'dashed' },
   mapAlertText: { color: colors.danger, fontWeight: 'bold', fontSize: 18, marginTop: 20 },
@@ -152,7 +155,7 @@ const styles = StyleSheet.create({
   actionButton: { backgroundColor: colors.surfaceHighlight, alignItems: 'center', justifyContent: 'center', paddingVertical: 18, borderRadius: 16, borderWidth: 1, borderColor: colors.border },
   actionText: { color: '#fff', fontSize: 14, fontWeight: 'bold' },
   claimOverlay: { ...StyleSheet.absoluteFillObject, justifyContent: 'center', alignItems: 'center', zIndex: 10 },
-  claimBox: { backgroundColor: colors.surfaceHighlight, padding: 30, borderRadius: 24, width: '85%', alignItems: 'center', borderWidth: 1, borderColor: colors.primaryMuted },
+  claimBox: { backgroundColor: colors.surfaceHighlight, padding: 30, borderRadius: 24, width: '85%', maxWidth: 500, alignItems: 'center', borderWidth: 1, borderColor: colors.primaryMuted },
   claimTitle: { color: '#fff', fontSize: 22, fontWeight: 'bold', marginTop: 15, marginBottom: 10 },
   claimDesc: { color: colors.textMuted, textAlign: 'center', fontSize: 15, lineHeight: 22 },
   dismissBtn: { marginTop: 20, backgroundColor: colors.primary, paddingVertical: 12, paddingHorizontal: 24, borderRadius: 12 },

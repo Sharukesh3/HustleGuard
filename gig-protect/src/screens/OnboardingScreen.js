@@ -141,7 +141,7 @@ const styles = StyleSheet.create({
   logoContainer: { flexDirection: 'row', alignItems: 'center', marginBottom: 10 },
   logoText: { color: '#fff', fontSize: 28, fontWeight: 'bold', marginLeft: 10, letterSpacing: 1 },
   subtitle: { color: colors.textMuted, fontSize: 16 },
-  content: { flex: 1, paddingHorizontal: 20 },
+  content: { flex: 1, paddingHorizontal: 20, width: '100%', maxWidth: 600, alignSelf: 'center' },
   stepContainer: { flex: 1, marginTop: 20 },
   stepTitle: { color: '#fff', fontSize: 22, fontWeight: '600', marginBottom: 20, textAlign: 'center' },
   card: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surface, padding: 20, borderRadius: 16, marginBottom: 15, borderWidth: 1, borderColor: colors.border },
