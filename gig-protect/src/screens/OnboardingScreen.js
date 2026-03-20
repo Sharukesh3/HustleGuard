@@ -43,7 +43,7 @@ export default function OnboardingScreen({ onComplete }) {
       <View style={styles.header}>
         <View style={styles.logoContainer}>
           <ShieldAlert color={colors.primary} size={32} />
-          <Text style={styles.logoText}>GigProtect</Text>
+          <Text style={styles.logoText}>HustleGuard</Text>
         </View>
         <Text style={styles.subtitle}>Q-Commerce Income Protection</Text>
       </View>

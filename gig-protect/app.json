@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "gig-protect",
-    "slug": "gig-protect",
+    "name": "HustleGuard",
+    "slug": "hustleguard",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
