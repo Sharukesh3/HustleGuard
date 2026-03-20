@@ -109,7 +109,28 @@ We have chosen a **React Native Mobile App** as the core platform. Q-Commerce gi
 
 ---
 
-## 7. Phase 1 Deliverables Checklist (Due: March 20)
+## 7. Adversarial Defense & Anti-Spoofing Strategy
+
+In a parametric insurance model where payouts trigger automatically, stopping intentional fraud rings is paramount. Our system assumes an active adversarial environment and employs multi-layered validation logic before any claim is processed.
+
+### 7.1 The Differentiation: Genuine vs. Spoofed Delays
+To distinguish between a genuinely stranded partner and a bad actor spoofing their location, our ML architecture analyzes **device telemetry patterns** rather than just static coordinates. GPS spoofing apps (like "Mock Locations") typically teleport the device or lack the natural micro-jitter (drift) of real GPS hardware filtering through urban canyons. Our model continuously checks the GPS `accuracy` radius and hardware sensor data (accelerometer/gyroscope zeroing out while moving) to classify movement as organic or mathematically spoofed.
+
+### 7.2 The Data: Beyond Basic GPS Coordinates
+When assessing a cluster of payouts, our fraud ring detection algorithm looks for coordinating metadata anomalies:
+- **WebSocket Disconnection Clusters:** If 10 riders drop connection in the exact same 10-meter block, but Google Maps Traffic API shows normal flow and local cellular towers show 100% uptime, it's flagged as an orchestrated airplane-mode farm.
+- **Battery & Charging Telemetry:** Fraud farms often run on devices plugged into a single power strip at a constant 100% battery state. We flag active-shift clusters of identical hardware states in identical locations.
+- **Image Metadata (EXIF/Hash):** For user-uploaded hazards, we hash the image to prevent fraud rings from sharing the same "flooded road" picture on Telegram, and cross-check EXIF anomalies (missing device orientation, altered timestamps).
+
+### 7.3 The UX Balance: Handling Flagged Claims Fairly
+Parametric insurance must remain frictionless. If an honest worker enters a true dead zone or building with bad reception, their claim could temporarily resemble a "flagged" fraud pattern. 
+- **Grace Periods (Pending State):** Flagged claims are not outright rejected. They enter a "Pending Verification" queue. The payout is escrowed rather than denied.
+- **Asynchronous Corroboration:** Once the worker reconnects to a stable network, the app seamlessly uploads cached background telemetry packets. If the timestamped internal data validates they were genuinely navigating a complex building, the escalated claim is automatically cleared and paid out immediately.
+- **Human-in-the-Loop Threshold:** Only severe, repeat anomalies lead to account suspension. A single flagged shift never penalizes an honest driver trying to make a living; they simply receive an off-cycle payout.
+
+---
+
+## 8. Phase 1 Deliverables Checklist (Due: March 20)
 - [x] Idea Document (this README in GitHub repo)
   - [x] Persona-based scenarios & workflow
   - [x] Weekly premium model explained
