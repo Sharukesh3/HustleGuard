@@ -2,7 +2,7 @@ import React from 'react';
 import { View, TouchableOpacity, Text, StyleSheet } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { Home, Camera, Wallet } from 'lucide-react-native';
-import { colors } from '../theme/colors';
+import { useThemeColors } from '../theme/colors';
 
 export default function TabBar({ activeTab, onTabChange }) {
   const tabs = [
@@ -10,10 +10,13 @@ export default function TabBar({ activeTab, onTabChange }) {
     { id: 'hazard', label: 'Report Hazard', icon: Camera },
     { id: 'wallet', label: 'Wallet', icon: Wallet },
   ];
+  
+  const colors = useThemeColors();
+  const styles = getStyles(colors);
 
   return (
     <View style={styles.container}>
-      <BlurView intensity={80} tint="dark" style={styles.blurView}>
+      <BlurView intensity={colors.isDark ? 80 : 40} tint={colors.isDark ? "dark" : "light"} style={styles.blurView}>
         {tabs.map((tab) => {
           const Icon = tab.icon;
           const isActive = activeTab === tab.id;
@@ -35,7 +38,7 @@ export default function TabBar({ activeTab, onTabChange }) {
   );
 }
 
-const styles = StyleSheet.create({
+const getStyles = (colors) => StyleSheet.create({
   container: {
     position: 'absolute',
     bottom: 0,
@@ -49,7 +52,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-around',
     paddingVertical: 15,
     borderTopWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
+    borderColor: colors.isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)',
   },
   tabItem: {
     alignItems: 'center',

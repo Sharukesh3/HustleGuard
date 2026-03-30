@@ -2,15 +2,18 @@ import React, { useState } from 'react';
 import { View, StyleSheet, StatusBar } from 'react-native';
 import OnboardingScreen from './src/screens/OnboardingScreen';
 import DashboardScreen from './src/screens/DashboardScreen';
+import PolicyScreen from './src/screens/PolicyScreen';
 import ReportHazardScreen from './src/screens/ReportHazardScreen';
 import WalletScreen from './src/screens/WalletScreen';
 import TabBar from './src/components/TabBar';
-import { colors } from './src/theme/colors';
+import { ThemeProvider, useThemeColors } from './src/theme/ThemeContext';
 
-export default function App() {
+function MainApp() {
   const [isOnboarded, setIsOnboarded] = useState(false);
   const [userProfile, setUserProfile] = useState(null);
   const [activeTab, setActiveTab] = useState('home');
+  const colors = useThemeColors();
+  const styles = getStyles(colors);
 
   const handleCompleteOnboarding = (profile) => {
     setUserProfile(profile);
@@ -21,6 +24,8 @@ export default function App() {
     switch(activeTab) {
       case 'home':
         return <DashboardScreen userProfile={userProfile} />;
+      case 'policy':
+        return <PolicyScreen userProfile={userProfile} />;
       case 'hazard':
         return <ReportHazardScreen />;
       case 'wallet':
@@ -32,7 +37,10 @@ export default function App() {
 
   return (
     <View style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor={colors.background} />
+      <StatusBar
+        barStyle={colors.isDark ? "light-content" : "dark-content"}
+        backgroundColor={colors.background}
+      />
       {!isOnboarded ? (
         <OnboardingScreen onComplete={handleCompleteOnboarding} />
       ) : (
@@ -45,7 +53,15 @@ export default function App() {
   );
 }
 
-const styles = StyleSheet.create({
+export default function App() {
+  return (
+    <ThemeProvider>
+      <MainApp />
+    </ThemeProvider>
+  );
+}
+
+const getStyles = (colors) => StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.background,

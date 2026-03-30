@@ -1,160 +1,304 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Animated, Image } from 'react-native';
+import React, { useState, useEffect, useRef } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Animated, Easing, Dimensions, Switch } from 'react-native';
 import { BlurView } from 'expo-blur';
-import { CloudRain, WifiOff, Navigation, IndianRupee, ShieldCheck, AlertTriangle } from 'lucide-react-native';
-import { colors } from '../theme/colors';
+import { CloudRain, WifiOff, Navigation, IndianRupee, ShieldCheck, AlertTriangle, Car, Zap, Building, Lock, Moon, Sun } from 'lucide-react-native';
+import { LinearGradient } from 'expo-linear-gradient';
+import { useTheme } from '../theme/ThemeContext';
+
+const { width } = Dimensions.get('window');
 
 export default function DashboardScreen({ userProfile }) {
-  const [isRaining, setIsRaining] = useState(false);
-  const [isDeadZone, setIsDeadZone] = useState(false);
-  const [claimStatus, setClaimStatus] = useState(null); // null, 'processing_rain', 'processing_network', 'approved'
+  const [activeHazard, setActiveHazard] = useState(null); 
+  const [claimStatus, setClaimStatus] = useState(null); 
+  
+  const { colors, theme, toggleTheme } = useTheme();
+  const styles = getStyles(colors);
 
-  const simulateRain = () => {
-    setIsRaining(true);
+  // Animations
+  const mapPulseAnim = useRef(new Animated.Value(0)).current;
+  const overlaySlideAnim = useRef(new Animated.Value(width)).current;
+  const overlayScaleAnim = useRef(new Animated.Value(0.9)).current;
+  const overlayOpacityAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    Animated.loop(
+      Animated.timing(mapPulseAnim, {
+        toValue: 1,
+        duration: 2500,
+        easing: Easing.out(Easing.ease),
+        useNativeDriver: true,
+      })
+    ).start();
+  }, []);
+
+  const triggerHazard = (type) => {
+    setActiveHazard(type);
+    
+    // Slide in Processing Overlay
+    setClaimStatus('processing');
+    Animated.parallel([
+      Animated.timing(overlaySlideAnim, { toValue: 0, duration: 400, easing: Easing.out(Easing.back(1.5)), useNativeDriver: true }),
+      Animated.timing(overlayScaleAnim, { toValue: 1, duration: 400, easing: Easing.out(Easing.back(1.5)), useNativeDriver: true }),
+      Animated.timing(overlayOpacityAnim, { toValue: 1, duration: 300, useNativeDriver: true })
+    ]).start();
+
+    // Simulate API Auth & Payout
     setTimeout(() => {
-      setClaimStatus('processing_rain');
-      setTimeout(() => {
-        setClaimStatus('approved');
-      }, 2000);
-    }, 1500);
+      setClaimStatus('approved');
+    }, 3000);
   };
 
-  const simulateDeadZone = () => {
-    setIsDeadZone(true);
-    setTimeout(() => {
-      setClaimStatus('processing_network');
-      setTimeout(() => {
-        setClaimStatus('approved');
-      }, 2000);
-    }, 1500);
+  const resetClaim = () => {
+    Animated.parallel([
+      Animated.timing(overlaySlideAnim, { toValue: width, duration: 300, easing: Easing.in(Easing.ease), useNativeDriver: true }),
+      Animated.timing(overlayOpacityAnim, { toValue: 0, duration: 300, useNativeDriver: true })
+    ]).start(() => {
+      setClaimStatus(null);
+      setActiveHazard(null);
+      overlayScaleAnim.setValue(0.9);
+    });
   };
 
-  const getOverlayColor = () => {
-    if (isRaining) return 'rgba(56, 189, 248, 0.15)';
-    if (isDeadZone) return 'rgba(239, 68, 68, 0.15)';
-    return 'transparent';
+  const getHazardConfig = () => {
+    switch(activeHazard) {
+      case 'rain': return { color: colors.info, icon: CloudRain, title: 'Severe Waterlogging', API: 'IMD Weather API' };
+      case 'network': return { color: colors.danger, icon: WifiOff, title: 'Carrier Outage', API: 'Telecom Ping API' };
+      case 'traffic': return { color: colors.warning, icon: Car, title: 'Gridlock / Accident', API: 'TomTom Traffic API' };
+      case 'gate': return { color: '#A855F7', icon: Building, title: 'Gate Approval Delay', API: 'MyGate Integration' };
+      case 'power': return { color: '#F97316', icon: Zap, title: 'Power Grid Failure', API: 'State Power Board API' };
+      default: return { color: colors.primary, icon: Navigation, title: 'Telemetry Active', API: 'Device GPS' };
+    }
   };
+
+  const activeConfig = getHazardConfig();
 
   return (
     <View style={styles.container}>
-      {/* Map Background Placeholder */}
-      <View style={styles.mapPlaceholder}>
-        <View style={styles.gridOverlay} />
-        <View style={[styles.gridOverlay, { backgroundColor: getOverlayColor() }]} />
+      {/* Dynamic Radar Map */}
+      <View style={styles.mapContainer}>
+        <LinearGradient colors={[colors.backgroundDark, colors.background]} style={StyleSheet.absoluteFillObject} />
         
-        <View style={[styles.marker, isDeadZone && { backgroundColor: 'rgba(239, 68, 68, 0.3)' }]}>
-          <View style={[styles.pulse, isDeadZone && { borderColor: colors.danger, opacity: 0.8 }]} />
-          <Navigation color={isDeadZone ? colors.textMuted : colors.primary} size={24} style={{ transform: [{ rotate: '45deg' }] }} />
+        {/* Radar Rings */}
+        <View style={styles.radarCenter}>
+           <Animated.View style={[styles.radarRing, { 
+              borderColor: activeHazard ? activeConfig.color : colors.primaryMuted,
+              transform: [{ scale: mapPulseAnim.interpolate({ inputRange: [0, 1], outputRange: [0.5, 3] }) }],
+              opacity: mapPulseAnim.interpolate({ inputRange: [0, 0.8, 1], outputRange: [0.8, 0, 0] })
+           }]} />
+           <Animated.View style={[styles.radarRing, { 
+              borderColor: activeHazard ? activeConfig.color : colors.primaryMuted,
+              transform: [{ scale: mapPulseAnim.interpolate({ inputRange: [0, 1], outputRange: [0.2, 2] }) }],
+              opacity: mapPulseAnim.interpolate({ inputRange: [0, 0.8, 1], outputRange: [1, 0, 0] })
+           }]} />
         </View>
 
-        {isDeadZone && <Text style={styles.mapAlertText}>No Signal • Disconnected</Text>}
+        {/* Central Vehicle Marker */}
+        <View style={[styles.marker, { backgroundColor: activeHazard ? 'transparent' : colors.surfaceHighlight, borderColor: activeHazard ? activeConfig.color : colors.border }]}>
+          <activeConfig.icon color={activeHazard ? activeConfig.color : colors.text} size={28} />
+        </View>
+
+        {/* HUD Overlay */}
+        <View style={styles.hudTop}>
+           <View style={styles.hudBadge}>
+             <ShieldCheck color={colors.primary} size={14} />
+             <Text style={styles.hudText}>{userProfile?.zone?.toUpperCase() || 'KORAMANGALA'} SECURED</Text>
+           </View>
+           <TouchableOpacity onPress={toggleTheme} style={[styles.hudBadge, { marginLeft: 10, paddingHorizontal: 10 }]}>
+             {colors.isDark ? <Sun color={colors.text} size={16} /> : <Moon color={colors.text} size={16} />}
+           </TouchableOpacity>
+        </View>
+        
+        {activeHazard && (
+          <View style={[styles.targetLock, { borderColor: activeConfig.color }]}>
+             <View style={styles.cornerTL} /><View style={styles.cornerTR} />
+             <View style={styles.cornerBL} /><View style={styles.cornerBR} />
+             <View style={[styles.scanLine, { backgroundColor: activeConfig.color }]} />
+             <Text style={[styles.targetText, { color: activeConfig.color }]}>DETECTED</Text>
+          </View>
+        )}
       </View>
 
-      <SafeAreaView style={styles.safeArea}>
-        <View style={styles.header}>
-          <View>
-            <Text style={styles.greeting}>Active Shift</Text>
-            <Text style={styles.zoneText}>Zone: {userProfile?.zone.toUpperCase() || 'KORAMANGALA'}</Text>
-          </View>
-          <View style={styles.shieldBadge}>
-            <ShieldCheck color={colors.primary} size={20} />
-            <Text style={styles.badgeText}>Protected</Text>
-          </View>
-        </View>
+      {/* Main Content Area */}
+      <View style={styles.sheetContainer}>
+        <BlurView intensity={colors.isDark ? 30 : 70} tint={colors.isDark ? "dark" : "light"} style={styles.glassSheet}>
+          <View style={styles.dragHandle} />
+          
+          <ScrollView contentContainerStyle={{ paddingBottom: 100 }} showsVerticalScrollIndicator={false}>
+            {/* Real-time Earnings Strip */}
+            <View style={styles.statsRow}>
+              <View style={styles.statBox}>
+                <Text style={styles.statLabel}>Shift Earnings</Text>
+                <Text style={styles.statValue}>₹1,240</Text>
+              </View>
+              <View style={styles.divider} />
+              <View style={styles.statBox}>
+                <Text style={styles.statLabel}>Active Time</Text>
+                <Text style={[styles.statValue, activeHazard && { color: colors.warning }]}>
+                  {activeHazard ? 'Delayed' : '4h 12m'}
+                </Text>
+              </View>
+              <View style={styles.divider} />
+              <View style={styles.statBox}>
+                <Text style={styles.statLabel}>Claims Used</Text>
+                <Text style={styles.statValue}>1/5</Text>
+              </View>
+            </View>
 
-        {/* Claim Simulation Status */}
-        {claimStatus && (
-          <BlurView intensity={80} tint="dark" style={styles.claimOverlay}>
-            <View style={styles.claimBox}>
-              {claimStatus.startsWith('processing') ? (
+            {/* Diagnostic Triggers Panel */}
+            <View style={styles.diagnosticPanel}>
+               <View style={styles.diagnosticHeader}>
+                 <Text style={styles.diagnosticTitle}>DEV MODE: API SIMULATION TRIGGERS</Text>
+                 <Lock color={colors.textMuted} size={14} />
+               </View>
+               <Text style={styles.diagnosticDesc}>Inject mock payloads to test the Zero-Touch Claims Engine.</Text>
+               
+               <View style={styles.triggerGrid}>
+                  {[
+                    { type: 'rain', icon: CloudRain, color: colors.info, label: 'IMD Rain API' },
+                    { type: 'network', icon: WifiOff, color: colors.danger, label: 'Ping Loss' },
+                    { type: 'traffic', icon: Car, color: colors.warning, label: 'TomTom Gridlock' },
+                    { type: 'gate', icon: Building, color: '#A855F7', label: 'MyGate Delay' },
+                  ].map((btn) => (
+                    <TouchableOpacity 
+                      key={btn.type}
+                      style={[styles.triggerBtn, { borderColor: btn.color, backgroundColor: activeHazard === btn.type ? 'hsla(0,0%,100%,0.05)' : colors.surface }]}
+                      onPress={() => triggerHazard(btn.type)}
+                      disabled={!!activeHazard}
+                      activeOpacity={0.7}
+                    >
+                      <btn.icon color={btn.color} size={24} />
+                      <Text style={[styles.triggerLabel, { color: btn.color }]}>{btn.label}</Text>
+                    </TouchableOpacity>
+                  ))}
+               </View>
+
+               <TouchableOpacity 
+                  style={[styles.triggerBtnFull, { borderColor: '#F97316', backgroundColor: activeHazard === 'power' ? 'hsla(0,0%,100%,0.05)' : colors.surface }]}
+                  onPress={() => triggerHazard('power')}
+                  disabled={!!activeHazard}
+               >
+                  <Zap color={'#F97316'} size={24} />
+                  <Text style={[styles.triggerLabel, { color: '#F97316', marginLeft: 10 }]}>State Grid Power Failure</Text>
+               </TouchableOpacity>
+            </View>
+          </ScrollView>
+        </BlurView>
+      </View>
+
+      {/* Claim Processing Overlay */}
+      {claimStatus && (
+        <Animated.View style={[styles.claimOverlay, { opacity: overlayOpacityAnim }]}>
+          <BlurView intensity={colors.isDark ? 40 : 80} tint={colors.isDark ? "dark" : "light"} style={StyleSheet.absoluteFillObject} />
+          
+          <Animated.View style={[styles.claimBoxWrapper, { 
+              transform: [{ translateY: overlaySlideAnim }, { scale: overlayScaleAnim }] 
+          }]}>
+            <LinearGradient 
+              colors={claimStatus === 'processing' ? [colors.surfaceHighlight, colors.surface] : [colors.surfaceHighlight, colors.surfaceHighlight]} 
+              style={styles.claimBox}
+            >
+              {claimStatus === 'processing' ? (
                 <>
-                  <AlertTriangle color={colors.warning} size={40} />
-                  <Text style={styles.claimTitle}>Disruption Detected</Text>
-                  <Text style={styles.claimDesc}>
-                    {claimStatus === 'processing_rain' 
-                      ? 'AI assessing severe waterlogging in your grid...' 
-                      : 'WebSocket cluster timeout. Detecting local ISP outage...'}
-                  </Text>
+                  <View style={styles.processingIconBox}>
+                    <ShieldCheck color={colors.primary} size={50} />
+                  </View>
+                  <Text style={styles.claimTitle}>AI Analysing {activeConfig.API}</Text>
+                  <View style={styles.verifyingList}>
+                     <Text style={styles.verifyingItem}>• Fetching latest endpoint data...</Text>
+                     <Text style={styles.verifyingItem}>• Triangulating GPS coordinates...</Text>
+                     <Text style={styles.verifyingItem}>• Matching policy bounds...</Text>
+                  </View>
+                  <Text style={styles.processingWait}>Please wait, verifying parameters.</Text>
                 </>
               ) : (
                 <>
-                  <IndianRupee color={colors.primary} size={40} />
-                  <Text style={styles.claimTitle}>Insta-Claim Approved</Text>
-                  <Text style={styles.claimDesc}>₹150 credited to your wallet for current shift downtime.</Text>
-                  <TouchableOpacity style={styles.dismissBtn} onPress={() => {setClaimStatus(null); setIsRaining(false); setIsDeadZone(false);}}>
-                    <Text style={styles.dismissText}>Resume Shift</Text>
+                  <View style={[styles.processingIconBox, { backgroundColor: 'hsla(146, 17%, 59%, 0.1)' }]}>
+                    <IndianRupee color={colors.success} size={50} />
+                  </View>
+                  <Text style={[styles.claimTitle, { color: colors.text }]}>Zero-Touch Payout Issued</Text>
+                  
+                  <View style={styles.receiptBox}>
+                    <View style={styles.receiptRow}><Text style={styles.receiptLabel}>Event:</Text><Text style={[styles.receiptValue, { color: activeConfig.color }]}>{activeConfig.title}</Text></View>
+                    <View style={styles.receiptRow}><Text style={styles.receiptLabel}>Validation:</Text><Text style={styles.receiptValue}>{activeConfig.API}</Text></View>
+                    <View style={styles.receiptRow}><Text style={styles.receiptLabel}>Disbursal:</Text><Text style={styles.receiptValue}>Instant Razorpay</Text></View>
+                    <View style={[styles.receiptRow, styles.receiptTotalRow]}>
+                       <Text style={styles.receiptTotalLabel}>Amount Credited:</Text>
+                       <Text style={styles.receiptTotalAmount}>₹50</Text>
+                    </View>
+                  </View>
+
+                  <TouchableOpacity style={styles.dismissBtn} onPress={resetClaim}>
+                    <Text style={styles.dismissText}>Acknowledge & Resume Shift</Text>
                   </TouchableOpacity>
                 </>
               )}
-            </View>
-          </BlurView>
-        )}
-
-        <View style={styles.bottomSection}>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.statsScroll}>
-            <BlurView intensity={40} tint="dark" style={styles.statCard}>
-              <Text style={styles.statLabel}>Earnings Protected</Text>
-              <Text style={styles.statValue}>₹4,500/Mo</Text>
-            </BlurView>
-            <BlurView intensity={40} tint="dark" style={styles.statCard}>
-              <Text style={styles.statLabel}>Current Risk Level</Text>
-              <Text style={[styles.statValue, (isRaining || isDeadZone) && { color: colors.danger }]}>
-                {isRaining ? 'HIGH (Rain)' : isDeadZone ? 'HIGH (Outage)' : 'LOW'}
-              </Text>
-            </BlurView>
-            <BlurView intensity={40} tint="dark" style={styles.statCard}>
-              <Text style={styles.statLabel}>Policy Expiry</Text>
-              <Text style={styles.statValue}>6 Days</Text>
-            </BlurView>
-          </ScrollView>
-
-          <View style={styles.actionRow}>
-            <TouchableOpacity style={[styles.actionButton, { flex: 1, marginRight: 10 }]} onPress={simulateRain} disabled={isRaining || isDeadZone}>
-              <CloudRain color="#fff" size={20} style={{ marginBottom: 5 }} />
-              <Text style={styles.actionText}>Simulate Rain</Text>
-            </TouchableOpacity>
-            
-            <TouchableOpacity style={[styles.actionButton, { flex: 1, marginLeft: 10, borderColor: colors.danger }]} onPress={simulateDeadZone} disabled={isRaining || isDeadZone}>
-              <WifiOff color={colors.danger} size={20} style={{ marginBottom: 5 }} />
-              <Text style={[styles.actionText, { color: colors.danger }]}>Simulate Outage</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </SafeAreaView>
+            </LinearGradient>
+          </Animated.View>
+        </Animated.View>
+      )}
     </View>
   );
 }
 
-// Custom Safe Area since we overlay the map
-const SafeAreaView = ({ children, style }) => (
-  <View style={[{ paddingTop: 50, flex: 1, justifyContent: 'space-between' }, style]}>{children}</View>
-);
+const getStyles = (colors) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: colors.backgroundDark },
+  mapContainer: { flex: 1, height: '60%', justifyContent: 'center', alignItems: 'center', backgroundColor: colors.backgroundDark, position: 'relative' },
+  
+  radarCenter: { position: 'absolute', justifyContent: 'center', alignItems: 'center' },
+  radarRing: { position: 'absolute', width: 250, height: 250, borderRadius: 125, borderWidth: 1 },
+  
+  hudTop: { position: 'absolute', top: 60, left: 20, flexDirection: 'row', alignItems: 'center' },
+  hudBadge: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'hsla(220, 78%, 76%, 0.1)', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8, borderWidth: 1, borderColor: colors.primaryMuted },
+  hudText: { color: colors.primary, fontSize: 11, fontWeight: '800', marginLeft: 6, letterSpacing: 1 },
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.background },
-  mapPlaceholder: { ...StyleSheet.absoluteFillObject, backgroundColor: '#09090b', justifyContent: 'center', alignItems: 'center' },
-  gridOverlay: { ...StyleSheet.absoluteFillObject, opacity: 0.1, borderWidth: 1, borderColor: '#3f3f46', borderStyle: 'dashed' },
-  mapAlertText: { color: colors.danger, fontWeight: 'bold', fontSize: 18, marginTop: 20 },
-  safeArea: { flex: 1 },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20 },
-  greeting: { color: '#fff', fontSize: 24, fontWeight: 'bold' },
-  zoneText: { color: colors.textMuted, fontSize: 14, marginTop: 4 },
-  shieldBadge: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surfaceHighlight, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20, borderWidth: 1, borderColor: colors.primaryMuted },
-  badgeText: { color: colors.primary, fontWeight: 'bold', marginLeft: 6 },
-  marker: { width: 40, height: 40, backgroundColor: 'rgba(16, 185, 129, 0.2)', borderRadius: 20, justifyContent: 'center', alignItems: 'center' },
-  pulse: { position: 'absolute', width: 60, height: 60, borderRadius: 30, borderWidth: 1, borderColor: colors.primary, opacity: 0.5 },
-  bottomSection: { paddingBottom: 100 }, // Account for TabBar height
-  statsScroll: { paddingHorizontal: 20, marginBottom: 20 },
-  statCard: { padding: 20, borderRadius: 20, marginRight: 15, width: 160, overflow: 'hidden', borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' },
-  statLabel: { color: colors.textMuted, fontSize: 13, marginBottom: 8 },
-  statValue: { color: '#fff', fontSize: 20, fontWeight: 'bold' },
-  actionRow: { flexDirection: 'row', paddingHorizontal: 20 },
-  actionButton: { backgroundColor: colors.surfaceHighlight, alignItems: 'center', justifyContent: 'center', paddingVertical: 18, borderRadius: 16, borderWidth: 1, borderColor: colors.border },
-  actionText: { color: '#fff', fontSize: 14, fontWeight: 'bold' },
-  claimOverlay: { ...StyleSheet.absoluteFillObject, justifyContent: 'center', alignItems: 'center', zIndex: 10 },
-  claimBox: { backgroundColor: colors.surfaceHighlight, padding: 30, borderRadius: 24, width: '85%', alignItems: 'center', borderWidth: 1, borderColor: colors.primaryMuted },
-  claimTitle: { color: '#fff', fontSize: 22, fontWeight: 'bold', marginTop: 15, marginBottom: 10 },
-  claimDesc: { color: colors.textMuted, textAlign: 'center', fontSize: 15, lineHeight: 22 },
-  dismissBtn: { marginTop: 20, backgroundColor: colors.primary, paddingVertical: 12, paddingHorizontal: 24, borderRadius: 12 },
-  dismissText: { color: '#000', fontWeight: 'bold', fontSize: 16 }
+  marker: { width: 64, height: 64, borderRadius: 32, justifyContent: 'center', alignItems: 'center', borderWidth: 2, zIndex: 10 },
+  
+  targetLock: { position: 'absolute', width: 200, height: 200, borderWidth: 1, borderStyle: 'dashed', justifyContent: 'center', alignItems: 'center' },
+  cornerTL: { position: 'absolute', top: -5, left: -5, width: 20, height: 20, borderTopWidth: 3, borderLeftWidth: 3, borderColor: 'inherit' },
+  cornerTR: { position: 'absolute', top: -5, right: -5, width: 20, height: 20, borderTopWidth: 3, borderRightWidth: 3, borderColor: 'inherit' },
+  cornerBL: { position: 'absolute', bottom: -5, left: -5, width: 20, height: 20, borderBottomWidth: 3, borderLeftWidth: 3, borderColor: 'inherit' },
+  cornerBR: { position: 'absolute', bottom: -5, right: -5, width: 20, height: 20, borderBottomWidth: 3, borderRightWidth: 3, borderColor: 'inherit' },
+  scanLine: { position: 'absolute', width: '100%', height: 2, opacity: 0.5 },
+  targetText: { position: 'absolute', bottom: -30, fontSize: 14, fontWeight: '900', letterSpacing: 2 },
+
+  sheetContainer: { position: 'absolute', bottom: 0, width: '100%', height: '55%' },
+  glassSheet: { flex: 1, borderTopLeftRadius: 40, borderTopRightRadius: 40, padding: 25, borderWidth: 1, borderColor: colors.isDark ? 'hsla(0,0%,100%,0.05)' : 'hsla(0,0%,0%,0.05)' },
+  dragHandle: { width: 40, height: 5, backgroundColor: colors.borderMuted, borderRadius: 3, alignSelf: 'center', marginBottom: 25 },
+  
+  statsRow: { flexDirection: 'row', justifyContent: 'space-between', backgroundColor: colors.surfaceHighlight, padding: 20, borderRadius: 24, borderWidth: 1, borderColor: colors.border, marginBottom: 30 },
+  statBox: { flex: 1, alignItems: 'center' },
+  divider: { width: 1, backgroundColor: colors.border, marginHorizontal: 10 },
+  statLabel: { color: colors.textMuted, fontSize: 12, fontWeight: '700', textTransform: 'uppercase', marginBottom: 8, letterSpacing: 0.5 },
+  statValue: { color: colors.text, fontSize: 22, fontWeight: '900' },
+
+  diagnosticPanel: { padding: 10 },
+  diagnosticHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 5 },
+  diagnosticTitle: { color: colors.textMuted, fontSize: 13, fontWeight: '800', letterSpacing: 1 },
+  diagnosticDesc: { color: colors.textMuted, fontSize: 13, lineHeight: 20, marginBottom: 20 },
+  
+  triggerGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 15, justifyContent: 'space-between', marginBottom: 15 },
+  triggerBtn: { width: (width - 85) / 2, padding: 18, borderRadius: 20, borderWidth: 1, alignItems: 'center' },
+  triggerLabel: { fontSize: 13, fontWeight: '800', marginTop: 10, textAlign: 'center' },
+  
+  triggerBtnFull: { width: '100%', flexDirection: 'row', padding: 18, borderRadius: 20, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
+
+  claimOverlay: { ...StyleSheet.absoluteFillObject, justifyContent: 'center', alignItems: 'center', zIndex: 100 },
+  claimBoxWrapper: { width: '90%', alignItems: 'center' },
+  claimBox: { width: '100%', padding: 35, borderRadius: 30, alignItems: 'center', borderWidth: 1, borderColor: colors.border, overflow: 'hidden' },
+  processingIconBox: { width: 90, height: 90, borderRadius: 45, backgroundColor: colors.primaryMuted, justifyContent: 'center', alignItems: 'center', marginBottom: 25 },
+  claimTitle: { color: colors.text, fontSize: 24, fontWeight: '900', marginBottom: 20, textAlign: 'center', letterSpacing: -0.5 },
+  verifyingList: { width: '100%', backgroundColor: colors.backgroundDark, padding: 20, borderRadius: 16, borderWidth: 1, borderColor: colors.border },
+  verifyingItem: { color: colors.textMuted, fontSize: 14, fontFamily: 'monospace', marginBottom: 10 },
+  processingWait: { color: colors.textMuted, marginTop: 20, fontSize: 14, fontWeight: '600' },
+
+  receiptBox: { width: '100%', backgroundColor: colors.backgroundDark, padding: 20, borderRadius: 20, borderWidth: 1, borderColor: colors.border, marginTop: 10, marginBottom: 30 },
+  receiptRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 12 },
+  receiptLabel: { color: colors.textMuted, fontSize: 14, fontWeight: '600' },
+  receiptValue: { color: colors.text, fontSize: 14, fontWeight: '800' },
+  receiptTotalRow: { borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 12, marginTop: 5, borderStyle: 'dashed' },
+  receiptTotalLabel: { color: colors.text, fontSize: 16, fontWeight: '800' },
+  receiptTotalAmount: { color: colors.success, fontSize: 24, fontWeight: '900' },
+
+  dismissBtn: { backgroundColor: colors.surfaceHighlight, width: '100%', paddingVertical: 18, borderRadius: 16, borderWidth: 1, borderColor: colors.border, alignItems: 'center' },
+  dismissText: { color: colors.text, fontSize: 16, fontWeight: '800' }
 });
