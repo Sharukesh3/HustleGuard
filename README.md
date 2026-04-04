@@ -140,3 +140,12 @@ Parametric insurance must remain frictionless. If an honest worker enters a true
   - [x] Platform choice justification (Web vs Mobile)
 - [x] GitHub Repository with README.md
 - [x] 2-minute strategy/prototype video: [Watch on YouTube](https://youtu.be/dUENxGHLdxc)
+
+## 9. Phase 2 Deliverables Checklist
+- [x] Registration Process
+- [x] Provide Policy Details
+- [x] Dynamic Premium Feature
+- [x] Display Past & Open Claims
+- [x] 3-5 Automated Triggers with Public APIs
+- [x] Implement Zero-Touch Claims
+- [ ] 2-minute strategy/prototype video
