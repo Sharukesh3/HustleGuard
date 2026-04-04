@@ -185,4 +185,4 @@ Parametric insurance must remain frictionless. If an honest worker enters a true
 - [x] Display Past & Open Claims
 - [x] 3-5 Automated Triggers with Public APIs
 - [x] Implement Zero-Touch Claims
-- [ ] 2-minute strategy/prototype video
+- [x] 2-minute strategy/prototype video: [Watch on YouTube](https://youtu.be/tfYiDm5c4Fo?si=WssaPSUz5R3wrn0t)
