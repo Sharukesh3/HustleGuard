@@ -52,7 +52,44 @@ Premiums will automatically adjust based on the risk profile of the zones the ri
 
 ---
 
-## 4. Data Sources & APIs
+## 4. How the Dynamic Premium is Calculated & APIs Used
+
+Our system calculates a highly personalized and dynamic weekly premium based on 4 layers of live risk assessment. Rather than a flat rate, our backend (`risk_model.py`) hits several real-time APIs to calculate a custom `base_multiplier` (applied to a base ₹25 premium) ranging from `0.8x` to `3.5x`. 
+
+### Layer 1: Historical & Seasonal Risk (Baseline)
+*   **APIs Used:** Groq API (LLaMA3), Firecrawl API, Tavily API.
+*   **Logic:** Assesses baseline risk for the specific month/city (e.g., Monsoon in Mumbai, AQI in Delhi in November).
+*   **Multiplier:** Heavy seasonal trends (`score >= 0.7`) add `+0.4`, while moderate risks add `+0.2`.
+
+### Layer 2: Live Weather Anomalies
+*   **APIs Used:** OpenWeatherMap API (`/weather` and `/air_pollution`).
+*   **Logic:** Gig delivery is disproportionately impacted by severe immediate weather. 
+*   **Multiplier:** 
+    *   **Rain:** `> 5.0mm/h` (Heavy Rain) adds `+0.5`; `> 0.5mm/h` adds `+0.2`.
+    *   **Air Quality (AQI):** Hazardous levels (Index 4 or 5) add `+0.3`; Poor (Index 3) adds `+0.1`.
+    *   **Extreme Heat:** Temperature `> 40°C` adds `+0.2`.
+
+### Layer 3: Real-Time Traffic & Congestion
+*   **APIs Used:** Google Maps Distance Matrix API.
+*   **Logic:** Compares real-time `duration_in_traffic` against expected baseline `duration` to calculate a `delay_factor`.
+*   **Multiplier:** 
+    *   `Delay >= 200%` (Traffic taking double the time) adds `+0.4`.
+    *   `Delay >= 140%` adds `+0.15`.
+    *   `Delay >= 120%` (Very common baseline congestion) adds `+0.05`.
+
+### Layer 4: Social Disruption & Hyperlocal AI Scan
+*   **APIs Used:** News API, Groq LLM NLP.
+*   **Logic:** The system scans localized news streams for strikes, unmapped hazards, or VIP movements affecting the gig worker's specific pin code and outputs an anomaly float score (0.0 to 1.0).
+*   **Multiplier:** 
+    *   Severe disruptions (`score >= 0.8`) add `+0.8`.
+    *   Moderate events (`score >= 0.5`) add `+0.4`.
+    *   Low-level delays (`score >= 0.2`) add `+0.1`.
+
+If the worker has already paid their dynamically tailored weekly premium, they are not redundantly charged upon restarting the app, conserving database read/writes and minimizing API calls.
+
+---
+
+## 4.1 Data Sources Matrix
 
 | Data Need | Source / API | Notes |
 | :--- | :--- | :--- |
@@ -140,3 +177,12 @@ Parametric insurance must remain frictionless. If an honest worker enters a true
   - [x] Platform choice justification (Web vs Mobile)
 - [x] GitHub Repository with README.md
 - [x] 2-minute strategy/prototype video: [Watch on YouTube](https://youtu.be/dUENxGHLdxc)
+
+## 9. Phase 2 Deliverables Checklist
+- [x] Registration Process
+- [x] Provide Policy Details
+- [x] Dynamic Premium Feature
+- [x] Display Past & Open Claims
+- [x] 3-5 Automated Triggers with Public APIs
+- [x] Implement Zero-Touch Claims
+- [ ] 2-minute strategy/prototype video
