@@ -1,19 +1,35 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Animated, Dimensions, Easing } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Animated, Dimensions, Easing, TextInput, KeyboardAvoidingView, Platform, Alert } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { ShieldAlert, MapPin, Bike, CheckCircle2, Cpu } from 'lucide-react-native';
+import { ShieldAlert, MapPin, Bike, CheckCircle2, Cpu, Phone, KeyRound, Link, Activity } from 'lucide-react-native';
+import * as Location from 'expo-location';
 import { useThemeColors } from '../theme/colors';
 
 const { width, height } = Dimensions.get('window');
 
 export default function OnboardingScreen({ onComplete }) {
   const [step, setStep] = useState(1);
+  
+  // Auth state
+  const [mobileNumber, setMobileNumber] = useState('');
+  const [otp, setOtp] = useState('');
+  
+  // Onboarding state
   const [platform, setPlatform] = useState('');
   const [zone, setZone] = useState('');
+  const [locationObj, setLocationObj] = useState(null);
+  const [searchResults, setSearchResults] = useState([]);
+  const [mockUserData, setMockUserData] = useState(null);
+
+  const [connecting, setConnecting] = useState(false);
   const [calculating, setCalculating] = useState(false);
+  const [otpError, setOtpError] = useState('');
   
   const colors = useThemeColors();
   const styles = getStyles(colors);
+
+  // Search Debounce timeout
+  const searchTimeout = useRef(null);
 
   // Animations
   const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -37,16 +53,190 @@ export default function OnboardingScreen({ onComplete }) {
   };
 
   const platforms = [
-    { id: 'zepto', name: 'Zepto', color: colors.primary },
-    { id: 'blinkit', name: 'Blinkit', color: colors.warning },
-    { id: 'instamart', name: 'Instamart', color: colors.danger }
+    { id: 'zepto', name: 'Zepto Partner', color: colors.primary },
+    { id: 'blinkit', name: 'Blinkit Delivery', color: colors.warning },
+    { id: 'instamart', name: 'Swiggy Instamart', color: colors.danger }
   ];
 
-  const zones = [
-    { id: 'koramangala', name: 'Koramangala, BLR', risk: 'High', factor: 1.2, desc: 'Frequent waterlogging & traffic gridlocks.' },
-    { id: 'indiranagar', name: 'Indiranagar, BLR', risk: 'Medium', factor: 1.0, desc: 'Moderate congestion, adequate drainage.' },
-    { id: 'hsr', name: 'HSR Layout, BLR', risk: 'Low', factor: 0.8, desc: 'Historical safety, wide roads.' }
-  ];
+  const handleNextStep = (nextStep) => {
+    fadeAnim.setValue(0);
+    slideAnim.setValue(50);
+    setStep(nextStep);
+  };
+
+  const handleSendOtp = async () => {
+    try {
+      const fullNumber = `+91${mobileNumber}`;
+      console.log(`Sending Real OTP request to backend for ${fullNumber}`);
+      
+      const response = await fetch('http://192.168.1.110:8000/auth/send-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone: fullNumber })
+      });
+      const data = await response.json();
+      
+      // Auto-fetch location in background while OTP is sent
+      fetchLocation();
+
+      handleNextStep(2);
+
+      if (data.fallback_otp) {
+        // Ensure it's treated as a string for the length-checks to work correctly
+        setTimeout(() => setOtp(String(data.fallback_otp)), 600);
+      }
+    } catch (error) {
+      console.error("Failed to send OTP:", error);
+    }
+  };
+
+  const fetchLocation = async () => {
+    let { status } = await Location.requestForegroundPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert(
+        "Location Required",
+        "HustleGuard requires your location to determine your operating zone and verify zero-touch claims.",
+        [{ text: "OK" }]
+      );
+      setZone("Bengaluru, IN"); // fallback
+      return;
+    }
+    let location = await Location.getCurrentPositionAsync({});
+    setLocationObj(location);
+    
+    try {
+      if (Platform.OS === 'web') {
+        const response = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${location.coords.latitude}&lon=${location.coords.longitude}&zoom=10&addressdetails=1`, {
+          headers: {
+            'User-Agent': 'HustleGuard/1.0',
+            'Accept-Language': 'en-US,en;q=0.9'
+          }
+        });
+        const data = await response.json();
+        if (data && data.address) {
+           const addr = data.address;
+           const locationName = `${addr.city || addr.town || addr.county || addr.suburb || data.name}, ${addr.state || addr.country}`;
+           setZone(locationName);
+        } else {
+           setZone("Unknown Location");
+        }
+      } else {
+        let geo = await Location.reverseGeocodeAsync({
+          latitude: location.coords.latitude,
+          longitude: location.coords.longitude
+        });
+        if (geo && geo.length > 0) {
+          const place = geo[0];
+          const locationName = `${place.subregion || place.city || place.district}, ${place.region || place.country}`;
+          setZone(locationName);
+        } else {
+          setZone("Unknown Location");
+        }
+      }
+    } catch(e) {
+      setZone("Auto-detect failed");
+    }
+  };
+
+  const handleLocationSearch = (text) => {
+    setZone(text);
+    
+    // Clear existing timeout
+    if (searchTimeout.current) {
+      clearTimeout(searchTimeout.current);
+    }
+    
+    if (text.length > 3) {
+      // Set new timeout to prevent 429 Too Many Requests
+      searchTimeout.current = setTimeout(async () => {
+        try {
+          const response = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(text)}&format=json&addressdetails=1&limit=5`, {
+            headers: {
+              'User-Agent': 'HustleGuard/1.0',
+              'Accept-Language': 'en-US,en;q=0.9'
+            }
+          });
+          const data = await response.json();
+          setSearchResults(data);
+        } catch (err) {
+          console.log("Search error", err);
+        }
+      }, 800); // 800ms debounce
+    } else {
+      setSearchResults([]);
+    }
+  };
+
+  const selectSuggestedLocation = (loc) => {
+    setZone(loc.display_name);
+    setSearchResults([]);
+    setLocationObj({
+      coords: { 
+        latitude: parseFloat(loc.lat), 
+        longitude: parseFloat(loc.lon) 
+      }
+    });
+  };
+
+  const attemptVerifyOtp = async (inputOtp) => {
+    setOtpError('');
+    if (inputOtp.length !== 4) return;
+    
+    try {
+      const fullNumber = `+91${mobileNumber}`;
+      console.log(`Verifying OTP ${inputOtp} for ${fullNumber}`);
+      
+      const res = await fetch('http://192.168.1.110:8000/auth/verify-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone: fullNumber, otp: inputOtp })
+      });
+      
+      if (res.ok) {
+        handleNextStep(3);
+      } else {
+        const errorData = await res.json();
+        setOtpError(errorData.detail || 'Invalid OTP. Please check the SMS and try again.');
+        setOtp('');
+      }
+    } catch (err) {
+      console.error(err);
+      setOtpError('Network error. Is the backend server running?');
+      setOtp('');
+    }
+  };
+
+  // Auto-verify OTP when 4 digits entered
+  useEffect(() => {
+    if (otp.length === 4) {
+      attemptVerifyOtp(otp);
+    }
+  }, [otp]);
+  
+  const handleConnect = (pId) => {
+    setPlatform(pId);
+    setConnecting(true);
+    startPulse();
+    
+    // Simulate API fetch delay
+    setTimeout(() => {
+      setConnecting(false);
+      pulseAnim.stopAnimation();
+      
+      // Mock data returned from simulated SSO
+      setMockUserData({
+        name: "Rahul K.",
+        id: "RIDER-99824",
+        city: "Bengaluru",
+        avgEarnings: "4,250",
+        riskProfile: "Night owl, 2-Wheeler"
+      });
+      // Removing auto-populate fallback if fetched successfully earlier, but keep default if missing
+      setZone(prev => prev || "Koramangala, BLR"); 
+      
+      handleNextStep(4);
+    }, 2000);
+  };
 
   const handleCalculate = () => {
     setCalculating(true);
@@ -54,20 +244,19 @@ export default function OnboardingScreen({ onComplete }) {
     setTimeout(() => {
       setCalculating(false);
       pulseAnim.stopAnimation();
-      setStep(3);
-      fadeAnim.setValue(0);
-      slideAnim.setValue(50);
+      handleNextStep(5);
     }, 2000);
   };
 
   const getPremium = () => {
-    const selectedZone = zones.find(z => z.id === zone);
+    // Pseudo-random factor based on the zone name to simulate a location-based ML output
+    const factor = zone ? (1 + (zone.length % 5) * 0.1) : 1; 
     const basePremium = 25; // Base weekly premium in INR
-    return selectedZone ? Math.round(basePremium * selectedZone.factor) : basePremium;
+    return Math.round(basePremium * factor);
   };
 
   return (
-    <View style={styles.container}>
+    <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.container}>
       {/* Dynamic Background */}
       <LinearGradient 
         colors={[colors.backgroundDark, colors.background, colors.backgroundDark]} 
@@ -75,7 +264,9 @@ export default function OnboardingScreen({ onComplete }) {
       />
       <View style={[styles.orb, { top: -100, right: -100, backgroundColor: colors.primaryMuted, opacity: 0.5 }]} />
       <View style={[styles.orb, { bottom: -100, left: -100, backgroundColor: 'hsla(52, 19%, 57%, 0.1)', opacity: 0.5 }]} />
-      
+
+      <View style={styles.contentWrapper}>
+
       <View style={styles.header}>
         <View style={styles.logoContainer}>
           <ShieldAlert color={colors.primary} size={36} strokeWidth={2.5} />
@@ -85,7 +276,7 @@ export default function OnboardingScreen({ onComplete }) {
         
         {/* Progress Dots */}
         <View style={styles.progressContainer}>
-           {[1, 2, 3].map(i => (
+           {[1, 2, 3, 4, 5].map(i => (
              <View key={i} style={[styles.dot, step >= i && styles.dotActive]} />
            ))}
         </View>
@@ -94,69 +285,158 @@ export default function OnboardingScreen({ onComplete }) {
       <ScrollView style={styles.content} contentContainerStyle={{ paddingBottom: 60 }} showsVerticalScrollIndicator={false}>
         <Animated.View style={[styles.stepContainer, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}>
           
+          {/* STEP 1: MOBILE NUMBER ENTRY */}
           {step === 1 && (
             <View>
-              <Text style={styles.stepTitle}>Which platform do you ride for?</Text>
-              <Text style={styles.stepDesc}>This helps us tailor your coverage based on platform SLA requirements.</Text>
+              <Text style={styles.stepTitle}>Let's get you protected.</Text>
+              <Text style={styles.stepDesc}>Enter your registered mobile number to continue.</Text>
               
-              <View style={styles.grid}>
-                {platforms.map(p => (
-                  <TouchableOpacity
-                    key={p.id}
-                    activeOpacity={0.8}
-                    style={[styles.card, platform === p.id && styles.cardActive]}
-                    onPress={() => setPlatform(p.id)}
-                  >
-                    <View style={[styles.iconWrapper, platform === p.id && { backgroundColor: colors.primaryMuted }]}>
-                      <Bike color={platform === p.id ? colors.primary : colors.textMuted} size={28} />
-                    </View>
-                    <Text style={[styles.cardTitle, platform === p.id && styles.textPrimary]}>{p.name}</Text>
-                  </TouchableOpacity>
-                ))}
+              <View style={styles.inputContainer}>
+                <Phone color={colors.textMuted} size={20} style={{marginRight: 10}} />
+                <Text style={styles.countryCode}>+91</Text>
+                <TextInput
+                  style={[styles.input, { marginLeft: 10, letterSpacing: 2 }]}
+                  placeholder="98765 43210"
+                  placeholderTextColor={colors.textMuted}
+                  keyboardType="phone-pad"
+                  maxLength={10}
+                  value={mobileNumber}
+                  onChangeText={setMobileNumber}
+                  autoFocus
+                />
               </View>
 
               <TouchableOpacity
-                style={[styles.button, !platform && styles.buttonDisabled]}
-                disabled={!platform}
-                onPress={() => { setStep(2); fadeAnim.setValue(0); slideAnim.setValue(50); }}
+                style={[styles.button, mobileNumber.length < 10 && styles.buttonDisabled]}
+                disabled={mobileNumber.length < 10}
+                onPress={handleSendOtp}
               >
-                <Text style={styles.buttonText}>Continue</Text>
+                <Text style={styles.buttonText}>Send OTP</Text>
               </TouchableOpacity>
             </View>
           )}
 
+          {/* STEP 2: OTP VERIFICATION */}
           {step === 2 && (
             <View>
-              <Text style={styles.stepTitle}>Select your primary grid/zone</Text>
-              <Text style={styles.stepDesc}>Our ML engine dynamically adjusts your premium based on hyper-local risk factors and historical delays.</Text>
-              
-              {zones.map(z => (
-                <TouchableOpacity
-                  key={z.id}
-                  activeOpacity={0.8}
-                  style={[styles.zoneCard, zone === z.id && styles.zoneCardActive]}
-                  onPress={() => setZone(z.id)}
-                >
-                  <View style={styles.zoneHeader}>
-                    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                      <MapPin color={zone === z.id ? colors.primary : colors.textMuted} size={22} />
-                      <Text style={[styles.zoneTitle, zone === z.id && styles.textPrimary]}>{z.name}</Text>
+              <Text style={styles.stepTitle}>Verify your number</Text>
+              <Text style={styles.stepDesc}>We've sent a 4-digit OTP to +91 {mobileNumber}</Text>
+
+              <View style={{position: 'relative', marginTop: 10}}>
+                <View style={styles.otpGrid}>
+                  {[0, 1, 2, 3].map((index) => (
+                    <View key={index} style={[styles.otpBox, otp.length === index && styles.otpBoxActive]}>
+                      <Text style={styles.otpText}>{otp[index] || ''}</Text>
                     </View>
-                    <View style={[styles.riskBadge, 
-                        z.risk === 'High' ? { backgroundColor: 'hsla(9, 26%, 64%, 0.15)', borderColor: colors.danger } : 
-                        z.risk === 'Medium' ? { backgroundColor: 'hsla(52, 19%, 57%, 0.15)', borderColor: colors.warning } : 
-                        { backgroundColor: 'hsla(146, 17%, 59%, 0.15)', borderColor: colors.success }
-                    ]}>
-                      <Text style={[styles.riskText, 
-                        z.risk === 'High' ? { color: colors.danger } : 
-                        z.risk === 'Medium' ? { color: colors.warning } : 
-                        { color: colors.success }
-                      ]}>{z.risk} Risk</Text>
+                  ))}
+                </View>
+                <TextInput
+                  style={styles.hiddenInput}
+                  keyboardType="number-pad"
+                  maxLength={4}
+                  value={otp}
+                  onChangeText={setOtp}
+                  autoFocus
+                />
+              </View>
+              
+              {otpError ? <Text style={[styles.resendText, {color: colors.danger, marginTop: 10}]}>{otpError}</Text> : null}
+              
+              <Text style={styles.resendText}>Didn't receive code? <Text style={{color: colors.primary}}>Resend</Text></Text>
+
+              {/* No Manual Verify Button Needed */}
+            </View>
+          )}
+
+          {/* STEP 3: PLATFORM SSO (LINK ACCOUNT) */}
+          {step === 3 && (
+            <View>
+              <Text style={styles.stepTitle}>Link Partner Account</Text>
+              <Text style={styles.stepDesc}>Connect your main gig platform to automatically sync your operational data and earnings profile.</Text>
+              
+              <View style={styles.grid}>
+                {platforms.map(p => (
+                   <TouchableOpacity
+                     key={p.id}
+                     activeOpacity={0.8}
+                     style={[styles.card, platform === p.id && styles.cardActive]}
+                     disabled={connecting}
+                     onPress={() => handleConnect(p.id)}
+                   >
+                     <View style={[styles.iconWrapper, platform === p.id && { backgroundColor: colors.primaryMuted }]}>
+                       {connecting && platform === p.id ? (
+                          <Animated.View style={{ transform: [{ scale: pulseAnim }] }}>
+                            <Link color={colors.primary} size={28} />
+                          </Animated.View>
+                       ) : (
+                          <Bike color={platform === p.id ? colors.primary : colors.textMuted} size={28} />
+                       )}
+                     </View>
+                     <View style={{ flex: 1 }}>
+                       <Text style={[styles.cardTitle, platform === p.id && styles.textPrimary]}>{p.name}</Text>
+                       {connecting && platform === p.id && (
+                         <Text style={{color: colors.primary, fontSize: 13, marginTop: 4, fontWeight: '600'}}>Authenticating via SSO...</Text>
+                       )}
+                     </View>
+                   </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+          )}
+
+          {/* STEP 4: FETCHED DATA & ZONE CONFIRMATION */}
+          {step === 4 && (
+            <View>
+              <View style={styles.mockDataCard}>
+                 <Text style={styles.mockDataTitle}>Partner Account Linked!</Text>
+                 <View style={styles.mockDataRow}><Text style={styles.mockDataLabel}>Worker:</Text><Text style={styles.mockDataValue}>{mockUserData?.name} ({mockUserData?.id})</Text></View>
+                 <View style={styles.mockDataRow}><Text style={styles.mockDataLabel}>Avg Weekly Earnings:</Text><Text style={[styles.mockDataValue, {color: colors.success}]}>₹{mockUserData?.avgEarnings}</Text></View>
+                 <View style={styles.mockDataRow}><Text style={styles.mockDataLabel}>Risk Profile:</Text><Text style={styles.mockDataValue}>{mockUserData?.riskProfile}</Text></View>
+              </View>
+
+              <Text style={styles.stepTitle}>Verify your primary zone</Text>
+              <Text style={styles.stepDesc}>We auto-detected your zone. Our ML engine uses this to calculate a dynamic premium to protect your earnings.</Text>
+              
+              {/* Removed hardcoded zones mapping, replacing with a search/auto-detect input */}
+              <View style={styles.inputContainer}>
+                <MapPin color={colors.textMuted} size={20} style={{marginRight: 10}} />
+                <TextInput
+                   style={[styles.input, { fontSize: 16 }]}
+                   placeholder="Search or enter location manually"
+                   placeholderTextColor={colors.textMuted}
+                   value={zone}
+                   onChangeText={handleLocationSearch}
+                />
+              </View>
+
+              {searchResults.length > 0 && (
+                  <View style={[styles.card, { marginTop: 5, padding: 10, flexDirection: 'column', alignItems: 'flex-start', borderRadius: 12 }]}>
+                    {searchResults.map((item, index) => (
+                      <TouchableOpacity 
+                        key={index} 
+                        style={{ paddingVertical: 12, paddingHorizontal: 10, borderBottomWidth: index === searchResults.length - 1 ? 0 : 1, borderBottomColor: colors.borderMuted, width: '100%' }}
+                        onPress={() => selectSuggestedLocation(item)}
+                      >
+                        <Text style={{ color: colors.text, fontSize: 14 }} numberOfLines={2}>{item.display_name}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+              )}
+
+              <View style={[styles.zoneCard, styles.zoneCardActive, { marginTop: 20 }]}>
+                  <View style={styles.zoneHeader}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
+                      <MapPin color={colors.primary} size={22} />
+                      <Text style={[styles.zoneTitle, styles.textPrimary, { marginLeft: 8, flexShrink: 1 }]} numberOfLines={1}>
+                        {zone || 'Enter location'}
+                      </Text>
+                    </View>
+                    <View style={[styles.riskBadge, { backgroundColor: 'hsla(217, 28%, 65%, 0.15)', borderColor: colors.info }]}>
+                      <Text style={[styles.riskText, { color: colors.info }]}>AI Analyzing</Text>
                     </View>
                   </View>
-                  <Text style={styles.zoneDesc}>{z.desc}</Text>
-                </TouchableOpacity>
-              ))}
+                  <Text style={styles.zoneDesc}>Our deep risk engine evaluates real-time congestion and natural hazard models based on this region.</Text>
+              </View>
 
               <TouchableOpacity
                 style={[styles.button, (!zone || calculating) && styles.buttonDisabled, calculating && styles.buttonCalculating]}
@@ -177,7 +457,8 @@ export default function OnboardingScreen({ onComplete }) {
             </View>
           )}
 
-          {step === 3 && (
+          {/* STEP 5: COVERAGE SUMMARY */}
+          {step === 5 && (
             <View style={styles.successContainer}>
               <View style={styles.successIconWrapper}>
                 <CheckCircle2 color={colors.success} size={70} strokeWidth={2} />
@@ -193,10 +474,10 @@ export default function OnboardingScreen({ onComplete }) {
                 </View>
                 
                 <View style={styles.aiInsightBox}>
-                  <Cpu color={colors.primary} size={16} />
+                  <Activity color={colors.primary} size={16} />
                   <Text style={styles.aiInsightText}>
-                    <Text style={{fontWeight: 'bold'}}>AI Pricing Insight: </Text>
-                    {zone === 'hsr' ? 'Premium discounted due to safe zone history.' : 'Pricing adjusted for active monsoon risks in your zone.'}
+                    <Text style={{fontWeight: 'bold'}}>Profile Insight: </Text>
+                    Pricing adjusted dynamically for {zone}, factoring active weather patterns and region history.
                   </Text>
                 </View>
               </View>
@@ -210,22 +491,24 @@ export default function OnboardingScreen({ onComplete }) {
 
               <TouchableOpacity
                 style={[styles.button, { marginTop: 10 }]}
-                onPress={() => onComplete({ platform, zone, premium: getPremium() })}
+                onPress={() => onComplete({ platform, zone, premium: getPremium(), user: mockUserData, locationObj })}
               >
                 <Text style={styles.buttonText}>Subscribe & Start Shift</Text>
               </TouchableOpacity>
-              <Text style={styles.fineprint}>By subscribing, ₹{getPremium()} will be deducted from your payout weekly.</Text>
+              <Text style={styles.fineprint}>By subscribing, ₹{getPremium()} will be deducted from your {platform === 'zepto' ? 'Zepto' : platform === 'blinkit' ? 'Blinkit' : 'Instamart'} payout weekly.</Text>
             </View>
           )}
 
         </Animated.View>
       </ScrollView>
-    </View>
+      </View>
+    </KeyboardAvoidingView>
   );
 }
 
 const getStyles = (colors) => StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.backgroundDark },
+  contentWrapper: { flex: 1, width: '100%', maxWidth: 480, alignSelf: 'center' },
   orb: { position: 'absolute', width: width, height: width, borderRadius: width / 2, filter: 'blur(50px)' },
   
   header: { paddingHorizontal: 25, paddingTop: 70, paddingBottom: 20 },
@@ -233,9 +516,9 @@ const getStyles = (colors) => StyleSheet.create({
   logoText: { color: colors.text, fontSize: 30, fontWeight: '900', marginLeft: 12, letterSpacing: -0.5 },
   subtitle: { color: colors.textMuted, fontSize: 15, fontWeight: '500', lineHeight: 22 },
   
-  progressContainer: { flexDirection: 'row', gap: 8, marginTop: 25 },
-  dot: { height: 4, width: 25, borderRadius: 2, backgroundColor: colors.borderMuted },
-  dotActive: { backgroundColor: colors.primary, width: 40 },
+  progressContainer: { flexDirection: 'row', gap: 6, marginTop: 25 },
+  dot: { height: 4, flex: 1, borderRadius: 2, backgroundColor: colors.borderMuted },
+  dotActive: { backgroundColor: colors.primary },
 
   content: { flex: 1, paddingHorizontal: 25 },
   stepContainer: { flex: 1, paddingTop: 15 },
@@ -243,12 +526,29 @@ const getStyles = (colors) => StyleSheet.create({
   stepTitle: { color: colors.text, fontSize: 24, fontWeight: '800', marginBottom: 8, letterSpacing: -0.5 },
   stepDesc: { color: colors.textMuted, fontSize: 15, lineHeight: 22, marginBottom: 30 },
   
-  grid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', gap: 15, marginBottom: 20 },
+  inputContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.borderMuted, borderRadius: 16, paddingHorizontal: 20, paddingVertical: 5 },
+  countryCode: { color: colors.text, fontSize: 18, fontWeight: '700', marginRight: 10 },
+  input: { flex: 1, color: colors.text, fontSize: 18, fontWeight: '600', paddingVertical: 15 },
+  resendText: { color: colors.textMuted, fontSize: 14, fontWeight: '600', marginTop: 15, textAlign: 'center' },
+
+  otpGrid: { flexDirection: 'row', justifyContent: 'space-between', gap: 10 },
+  otpBox: { flex: 1, height: 60, borderRadius: 16, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.borderMuted, justifyContent: 'center', alignItems: 'center' },
+  otpBoxActive: { borderColor: colors.primary, backgroundColor: colors.surfaceHighlight },
+  otpText: { color: colors.text, fontSize: 24, fontWeight: '700' },
+  hiddenInput: { position: 'absolute', width: '100%', height: '100%', opacity: 0 },
+
+  grid: { flexDirection: 'column', gap: 15, marginBottom: 20 },
   card: { width: '100%', flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surface, padding: 20, borderRadius: 20, borderWidth: 1, borderColor: colors.border },
   cardActive: { borderColor: colors.primary, backgroundColor: colors.surfaceHighlight },
   iconWrapper: { width: 48, height: 48, borderRadius: 14, backgroundColor: colors.surfaceHighlight, justifyContent: 'center', alignItems: 'center', marginRight: 15 },
   cardTitle: { color: colors.text, fontSize: 18, fontWeight: '700' },
   textPrimary: { color: colors.primary },
+
+  mockDataCard: { backgroundColor: 'hsla(146, 17%, 59%, 0.1)', borderWidth: 1, borderColor: colors.success, borderRadius: 16, padding: 20, marginBottom: 30 },
+  mockDataTitle: { color: colors.success, fontSize: 14, fontWeight: '800', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 15 },
+  mockDataRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 },
+  mockDataLabel: { color: colors.textMuted, fontSize: 14, fontWeight: '600' },
+  mockDataValue: { color: colors.text, fontSize: 14, fontWeight: '800' },
 
   zoneCard: { backgroundColor: colors.surface, padding: 20, borderRadius: 20, borderWidth: 1, borderColor: colors.border, marginBottom: 16 },
   zoneCardActive: { borderColor: colors.primary, backgroundColor: colors.surfaceHighlight },

@@ -64,10 +64,13 @@ export default function App() {
 const getStyles = (colors) => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.background,
+    backgroundColor: colors.backgroundDark || colors.background, // Fill the whole web window with the dark theme natively
   },
   appContainer: {
     flex: 1,
-    position: 'relative'
+    position: 'relative',
+    width: '100%',
+    backgroundColor: colors.background
   }
 });
+

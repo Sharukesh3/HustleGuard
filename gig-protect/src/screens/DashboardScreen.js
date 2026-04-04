@@ -1,15 +1,21 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Animated, Easing, Dimensions, Switch } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Animated, Easing, Dimensions, Switch, Platform } from 'react-native';
 import { BlurView } from 'expo-blur';
-import { CloudRain, WifiOff, Navigation, IndianRupee, ShieldCheck, AlertTriangle, Car, Zap, Building, Lock, Moon, Sun } from 'lucide-react-native';
+import { CloudRain, WifiOff, Navigation, IndianRupee, ShieldCheck, AlertTriangle, Car, Zap, Building, Lock, Moon, Sun, Map } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import * as Location from 'expo-location';
 import { useTheme } from '../theme/ThemeContext';
+import { MapView, Marker, Polyline } from '../components/NativeMap';
+import { darkMapStyle } from '../theme/mapStyles';
 
 const { width } = Dimensions.get('window');
 
 export default function DashboardScreen({ userProfile }) {
   const [activeHazard, setActiveHazard] = useState(null); 
   const [claimStatus, setClaimStatus] = useState(null); 
+  const [isExpanded, setIsExpanded] = useState(false);
+  const [showSimulatedRoute, setShowSimulatedRoute] = useState(false);
+  const [deviceHeading, setDeviceHeading] = useState(0);
   
   const { colors, theme, toggleTheme } = useTheme();
   const styles = getStyles(colors);
@@ -19,6 +25,18 @@ export default function DashboardScreen({ userProfile }) {
   const overlaySlideAnim = useRef(new Animated.Value(width)).current;
   const overlayScaleAnim = useRef(new Animated.Value(0.9)).current;
   const overlayOpacityAnim = useRef(new Animated.Value(0)).current;
+  const panelHeightAnim = useRef(new Animated.Value(0)).current;
+
+  const togglePanel = () => {
+    const toValue = isExpanded ? 0 : 1;
+    Animated.timing(panelHeightAnim, {
+      toValue,
+      duration: 300,
+      easing: Easing.inOut(Easing.ease),
+      useNativeDriver: false,
+    }).start();
+    setIsExpanded(!isExpanded);
+  };
 
   useEffect(() => {
     Animated.loop(
@@ -29,6 +47,24 @@ export default function DashboardScreen({ userProfile }) {
         useNativeDriver: true,
       })
     ).start();
+
+    let subscription;
+    (async () => {
+      if (Platform.OS !== 'web') {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status === 'granted') {
+          subscription = await Location.watchHeadingAsync((headingInfo) => {
+            setDeviceHeading(Math.round(headingInfo.magHeading || headingInfo.trueHeading || 0));
+          });
+        }
+      }
+    })();
+
+    return () => {
+      if (subscription) {
+        subscription.remove();
+      }
+    };
   }, []);
 
   const triggerHazard = (type) => {
@@ -72,14 +108,59 @@ export default function DashboardScreen({ userProfile }) {
 
   const activeConfig = getHazardConfig();
 
+  const baseLat = userProfile?.locationObj?.coords?.latitude || 12.9352;
+  const baseLng = userProfile?.locationObj?.coords?.longitude || 77.6245;
+
+  const simulatedRoute = [
+    { latitude: baseLat, longitude: baseLng },
+    { latitude: baseLat + 0.0008, longitude: baseLng - 0.0005 },
+    { latitude: baseLat + 0.0020, longitude: baseLng + 0.0010 },
+    { latitude: baseLat + 0.0033, longitude: baseLng + 0.0023 },
+  ];
+
   return (
     <View style={styles.container}>
       {/* Dynamic Radar Map */}
-      <View style={styles.mapContainer}>
-        <LinearGradient colors={[colors.backgroundDark, colors.background]} style={StyleSheet.absoluteFillObject} />
+      <Animated.View style={[styles.mapContainer, { 
+        transform: [{ translateY: panelHeightAnim.interpolate({ inputRange: [0, 1], outputRange: [0, -80] }) }] 
+      }]}>
+        {Platform.OS !== 'web' ? (
+          <MapView 
+            style={StyleSheet.absoluteFillObject}
+            initialRegion={{
+              latitude: showSimulatedRoute ? simulatedRoute[1].latitude : baseLat,
+              longitude: showSimulatedRoute ? simulatedRoute[1].longitude : baseLng,
+              latitudeDelta: 0.015,
+              longitudeDelta: 0.0121,
+            }}
+            userInterfaceStyle={colors.isDark ? "dark" : "light"}
+            customMapStyle={colors.isDark ? darkMapStyle : []}
+          >
+            {showSimulatedRoute ? (
+               <Polyline coordinates={simulatedRoute} strokeColor={colors.primary} strokeWidth={4} />
+            ) : null}
+            <Marker 
+               coordinate={{
+                 latitude: showSimulatedRoute ? simulatedRoute[1].latitude : baseLat,
+                 longitude: showSimulatedRoute ? simulatedRoute[1].longitude : baseLng
+               }}
+               rotation={deviceHeading}
+            />
+          </MapView>
+        ) : (
+            <View style={StyleSheet.absoluteFillObject}>
+              <iframe 
+                width="100%" 
+                height="100%" 
+                frameBorder="0" 
+                style={{ border: 0, filter: colors.isDark ? 'invert(90%) hue-rotate(180deg)' : 'none' }} 
+                src={`https://www.openstreetmap.org/export/embed.html?bbox=${baseLng - 0.01},${baseLat - 0.015},${baseLng + 0.01},${baseLat + 0.015}&layer=mapnik&marker=${showSimulatedRoute ? simulatedRoute[1].latitude : baseLat},${showSimulatedRoute ? simulatedRoute[1].longitude : baseLng}`}
+            />
+          </View>
+        )}
         
-        {/* Radar Rings */}
-        <View style={styles.radarCenter}>
+        {/* Radar Rings overlays mapped marker */}
+        <View style={styles.radarCenter} pointerEvents="none">
            <Animated.View style={[styles.radarRing, { 
               borderColor: activeHazard ? activeConfig.color : colors.primaryMuted,
               transform: [{ scale: mapPulseAnim.interpolate({ inputRange: [0, 1], outputRange: [0.5, 3] }) }],
@@ -92,17 +173,15 @@ export default function DashboardScreen({ userProfile }) {
            }]} />
         </View>
 
-        {/* Central Vehicle Marker */}
-        <View style={[styles.marker, { backgroundColor: activeHazard ? 'transparent' : colors.surfaceHighlight, borderColor: activeHazard ? activeConfig.color : colors.border }]}>
-          <activeConfig.icon color={activeHazard ? activeConfig.color : colors.text} size={28} />
-        </View>
-
         {/* HUD Overlay */}
         <View style={styles.hudTop}>
            <View style={styles.hudBadge}>
              <ShieldCheck color={colors.primary} size={14} />
              <Text style={styles.hudText}>{userProfile?.zone?.toUpperCase() || 'KORAMANGALA'} SECURED</Text>
            </View>
+           <TouchableOpacity onPress={() => setShowSimulatedRoute(!showSimulatedRoute)} style={[styles.hudBadge, { marginLeft: 10, paddingHorizontal: 10 }]}>
+             <Map color={showSimulatedRoute ? colors.primary : colors.text} size={16} />
+           </TouchableOpacity>
            <TouchableOpacity onPress={toggleTheme} style={[styles.hudBadge, { marginLeft: 10, paddingHorizontal: 10 }]}>
              {colors.isDark ? <Sun color={colors.text} size={16} /> : <Moon color={colors.text} size={16} />}
            </TouchableOpacity>
@@ -116,14 +195,20 @@ export default function DashboardScreen({ userProfile }) {
              <Text style={[styles.targetText, { color: activeConfig.color }]}>DETECTED</Text>
           </View>
         )}
-      </View>
+      </Animated.View>
 
       {/* Main Content Area */}
-      <View style={styles.sheetContainer}>
+      <Animated.View style={[styles.sheetContainer, { height: panelHeightAnim.interpolate({ inputRange: [0, 1], outputRange: ['40%', '65%'] }) }]}>
         <BlurView intensity={colors.isDark ? 30 : 70} tint={colors.isDark ? "dark" : "light"} style={styles.glassSheet}>
-          <View style={styles.dragHandle} />
+          <TouchableOpacity activeOpacity={0.8} onPress={togglePanel} style={{ paddingVertical: 10, marginBottom: 15 }}>
+            <View style={styles.dragHandle} />
+          </TouchableOpacity>
           
-          <ScrollView contentContainerStyle={{ paddingBottom: 100 }} showsVerticalScrollIndicator={false}>
+          <ScrollView 
+            scrollEnabled={!isExpanded}
+            contentContainerStyle={{ paddingBottom: isExpanded ? 20 : 100 }} 
+            showsVerticalScrollIndicator={false}
+          >
             {/* Real-time Earnings Strip */}
             <View style={styles.statsRow}>
               <View style={styles.statBox}>
@@ -152,12 +237,13 @@ export default function DashboardScreen({ userProfile }) {
                </View>
                <Text style={styles.diagnosticDesc}>Inject mock payloads to test the Zero-Touch Claims Engine.</Text>
                
-               <View style={styles.triggerGrid}>
+               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.triggerGrid}>
                   {[
                     { type: 'rain', icon: CloudRain, color: colors.info, label: 'IMD Rain API' },
                     { type: 'network', icon: WifiOff, color: colors.danger, label: 'Ping Loss' },
                     { type: 'traffic', icon: Car, color: colors.warning, label: 'TomTom Gridlock' },
                     { type: 'gate', icon: Building, color: '#A855F7', label: 'MyGate Delay' },
+                    { type: 'power', icon: Zap, color: '#F97316', label: 'Power Grid' },
                   ].map((btn) => (
                     <TouchableOpacity 
                       key={btn.type}
@@ -170,20 +256,11 @@ export default function DashboardScreen({ userProfile }) {
                       <Text style={[styles.triggerLabel, { color: btn.color }]}>{btn.label}</Text>
                     </TouchableOpacity>
                   ))}
-               </View>
-
-               <TouchableOpacity 
-                  style={[styles.triggerBtnFull, { borderColor: '#F97316', backgroundColor: activeHazard === 'power' ? 'hsla(0,0%,100%,0.05)' : colors.surface }]}
-                  onPress={() => triggerHazard('power')}
-                  disabled={!!activeHazard}
-               >
-                  <Zap color={'#F97316'} size={24} />
-                  <Text style={[styles.triggerLabel, { color: '#F97316', marginLeft: 10 }]}>State Grid Power Failure</Text>
-               </TouchableOpacity>
+               </ScrollView>
             </View>
           </ScrollView>
         </BlurView>
-      </View>
+      </Animated.View>
 
       {/* Claim Processing Overlay */}
       {claimStatus && (
@@ -251,6 +328,7 @@ const getStyles = (colors) => StyleSheet.create({
   hudBadge: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'hsla(220, 78%, 76%, 0.1)', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8, borderWidth: 1, borderColor: colors.primaryMuted },
   hudText: { color: colors.primary, fontSize: 11, fontWeight: '800', marginLeft: 6, letterSpacing: 1 },
 
+  markerContainer: { width: 120, height: 120, justifyContent: 'center', alignItems: 'center', backgroundColor: 'transparent' },
   marker: { width: 64, height: 64, borderRadius: 32, justifyContent: 'center', alignItems: 'center', borderWidth: 2, zIndex: 10 },
   
   targetLock: { position: 'absolute', width: 200, height: 200, borderWidth: 1, borderStyle: 'dashed', justifyContent: 'center', alignItems: 'center' },
@@ -261,9 +339,9 @@ const getStyles = (colors) => StyleSheet.create({
   scanLine: { position: 'absolute', width: '100%', height: 2, opacity: 0.5 },
   targetText: { position: 'absolute', bottom: -30, fontSize: 14, fontWeight: '900', letterSpacing: 2 },
 
-  sheetContainer: { position: 'absolute', bottom: 0, width: '100%', height: '55%' },
+  sheetContainer: { position: 'absolute', bottom: 0, width: '100%', height: '40%' },
   glassSheet: { flex: 1, borderTopLeftRadius: 40, borderTopRightRadius: 40, padding: 25, borderWidth: 1, borderColor: colors.isDark ? 'hsla(0,0%,100%,0.05)' : 'hsla(0,0%,0%,0.05)' },
-  dragHandle: { width: 40, height: 5, backgroundColor: colors.borderMuted, borderRadius: 3, alignSelf: 'center', marginBottom: 25 },
+  dragHandle: { width: 40, height: 5, backgroundColor: colors.borderMuted, borderRadius: 3, alignSelf: 'center' },
   
   statsRow: { flexDirection: 'row', justifyContent: 'space-between', backgroundColor: colors.surfaceHighlight, padding: 20, borderRadius: 24, borderWidth: 1, borderColor: colors.border, marginBottom: 30 },
   statBox: { flex: 1, alignItems: 'center' },
@@ -276,9 +354,9 @@ const getStyles = (colors) => StyleSheet.create({
   diagnosticTitle: { color: colors.textMuted, fontSize: 13, fontWeight: '800', letterSpacing: 1 },
   diagnosticDesc: { color: colors.textMuted, fontSize: 13, lineHeight: 20, marginBottom: 20 },
   
-  triggerGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 15, justifyContent: 'space-between', marginBottom: 15 },
-  triggerBtn: { width: (width - 85) / 2, padding: 18, borderRadius: 20, borderWidth: 1, alignItems: 'center' },
-  triggerLabel: { fontSize: 13, fontWeight: '800', marginTop: 10, textAlign: 'center' },
+  triggerGrid: { flexDirection: 'row', gap: 12, paddingRight: 20, marginBottom: 15 },
+  triggerBtn: { width: 120, padding: 15, borderRadius: 20, borderWidth: 1, alignItems: 'center' },
+  triggerLabel: { fontSize: 12, fontWeight: '800', marginTop: 10, textAlign: 'center' },
   
   triggerBtnFull: { width: '100%', flexDirection: 'row', padding: 18, borderRadius: 20, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
 

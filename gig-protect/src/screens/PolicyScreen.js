@@ -92,15 +92,15 @@ export default function PolicyScreen({ userProfile }) {
            </LinearGradient>
         </Animated.View>
 
-        <Text style={styles.sectionTitle}>Included Coverages</Text>
+        <Text style={styles.sectionTitle}>Coverage Details & Exclusions</Text>
         <Text style={styles.sectionSubtitle}>Zero-touch claims processed automatically via designated API triggers.</Text>
         
         <View style={styles.grid}>
            {[
-             { icon: Calendar, color: colors.info, title: 'Weather', desc: 'Severe rain & flooding delays.' },
-             { icon: AlertCircle, color: colors.danger, title: 'Traffic/Access', desc: 'Gridlocks & gate restrictions.' },
-             { icon: RefreshCw, color: colors.warning, title: 'System Outage', desc: 'Telecom or power failure.' },
-             { icon: FileText, color: colors.success, title: 'Unmapped', desc: 'YOLOv11 verified hazards.' }
+             { icon: Calendar, color: colors.info, title: 'Weather Events', desc: 'Severe rain, heatwaves, flooding & AQI drops.' },
+             { icon: AlertCircle, color: colors.danger, title: 'Access & Grids', desc: 'Apartment complex delays & road closures.' },
+             { icon: RefreshCw, color: colors.warning, title: 'System Outages', desc: 'Cascading power grid & telecom failures.' },
+             { icon: FileText, color: colors.success, title: 'Unmapped Hazards', desc: 'Verified social strikes & unmapped obstructions.' }
            ].map((item, index) => (
              <BlurView intensity={colors.isDark ? 20 : 60} tint={colors.isDark ? "dark" : "light"} style={styles.gridItem} key={index}>
                 <View style={[styles.iconBox, { backgroundColor: item.color + '20' }]}>
@@ -114,7 +114,7 @@ export default function PolicyScreen({ userProfile }) {
 
         <View style={styles.disclaimerContainer}>
            <AlertCircle color={colors.textMuted} size={16} />
-           <Text style={styles.disclaimerText}>Payouts strictly require geo-verification within the registered operating territory.</Text>
+           <Text style={styles.disclaimerText}>Payouts strictly cover explicit loss of income. Vehicle repairs and personal health incidents are explicitly excluded from this policy.</Text>
         </View>
 
         <TouchableOpacity style={styles.termsBtn} activeOpacity={0.7}>
