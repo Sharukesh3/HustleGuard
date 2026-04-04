@@ -186,13 +186,13 @@ export default function OnboardingScreen({ onComplete }) {
       const fullNumber = `+91${mobileNumber}`;
       console.log(`Verifying OTP ${inputOtp} for ${fullNumber}`);
       
-      const res = await fetch('http://192.168.1.110:8000/auth/verify-otp', {
+      let authUrl = Platform.OS==='web'?'http://localhost:8000/auth/verify-otp':'http://192.168.1.110:8000/auth/verify-otp'; const res = await fetch(authUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ phone: fullNumber, otp: inputOtp })
       });
       
-      if (res.ok) {
+      if (res.ok) { const authData = await res.json(); setMockUserData({ token: authData.token, user: authData.user });
         handleNextStep(3);
       } else {
         const errorData = await res.json();
@@ -224,35 +224,71 @@ export default function OnboardingScreen({ onComplete }) {
       pulseAnim.stopAnimation();
       
       // Mock data returned from simulated SSO
-      setMockUserData({
-        name: "Rahul K.",
-        id: "RIDER-99824",
-        city: "Bengaluru",
-        avgEarnings: "4,250",
-        riskProfile: "Night owl, 2-Wheeler"
-      });
-      // Removing auto-populate fallback if fetched successfully earlier, but keep default if missing
+        setMockUserData(prev => ({
+          ...prev,
+          name: prev?.user?.name || "Rahul K.",
+          id: prev?.user?.phone || "RIDER-99824",
+          city: "Bengaluru",
+          avgEarnings: "4,250",
+          riskProfile: "Night owl, 2-Wheeler"
+        }));
       setZone(prev => prev || "Koramangala, BLR"); 
       
       handleNextStep(4);
     }, 2000);
   };
 
-  const handleCalculate = () => {
+  const handleCalculate = async () => {
     setCalculating(true);
     startPulse();
-    setTimeout(() => {
-      setCalculating(false);
-      pulseAnim.stopAnimation();
-      handleNextStep(5);
-    }, 2000);
-  };
-
-  const getPremium = () => {
-    // Pseudo-random factor based on the zone name to simulate a location-based ML output
-    const factor = zone ? (1 + (zone.length % 5) * 0.1) : 1; 
-    const basePremium = 25; // Base weekly premium in INR
-    return Math.round(basePremium * factor);
+    
+    // Call the real backend API for pricing logic
+    try {
+        const destLat = locationObj?.coords?.latitude + 0.05 || 12.9260; // Mock a nearby destination to get traffic
+        const destLon = locationObj?.coords?.longitude + 0.05 || 77.6229;
+        const apiLat = locationObj?.coords?.latitude || 12.9716;
+        const apiLon = locationObj?.coords?.longitude || 77.5946;
+        const currentCity = zone.split(",")[0] || "Bangalore";
+        
+        // Connect to local backend. Assuming IP 192.168.1.110 based on earlier API logic. Replace if needed with localhost/10.0.2.2 
+        let apiUrl = `http://192.168.1.110:8000/premium/calculate?lat=${apiLat}&lng=${apiLon}&city=${currentCity}&dest_lat=${destLat}&dest_lon=${destLon}`;
+        
+        if (Platform.OS === 'web') {
+           apiUrl = `http://localhost:8000/premium/calculate?lat=${apiLat}&lng=${apiLon}&city=${currentCity}&dest_lat=${destLat}&dest_lon=${destLon}`;
+        }
+        
+        console.log("Fetching real premium from:", apiUrl);
+          const res = await fetch(apiUrl, {
+              headers: {
+                  'Authorization': `Bearer ${mockUserData.token}`
+              }
+          });
+        if (!res.ok) throw new Error("API failed");
+        const data = await res.json();
+        
+        // Merge the ML API pricing insights securely to the user profile
+        setMockUserData(prev => ({
+           ...prev,
+           premium: data.final_premium,
+           basePremium: data.base_premium,
+           profileInsight: data.overall_reason,
+           pricingFactors: data.factors
+        }));
+    } catch (e) {
+        console.error("Premium Calc Error fallback:", e);
+        // Fallback simulated logic if server isn't reachable
+        const factor = zone ? (1 + (zone.length % 5) * 0.1) : 1; 
+        const basePremium = 25; 
+        setMockUserData(prev => ({
+           ...prev,
+           premium: Math.round(basePremium * factor),
+           profileInsight: "Premium adjusted based on localized geographical risks and standard traffic models."
+        }));
+    } finally {
+        setCalculating(false);
+        pulseAnim.stopAnimation();
+        handleNextStep(5);
+    }
   };
 
   return (
@@ -470,14 +506,14 @@ export default function OnboardingScreen({ onComplete }) {
                 <Text style={styles.planLabel}>WEEKLY PROTECTION PLAN</Text>
                 <View style={styles.priceContainer}>
                   <Text style={styles.currency}>₹</Text>
-                  <Text style={styles.premiumAmount}>{getPremium()}</Text>
+                  <Text style={styles.premiumAmount}>{mockUserData?.premium || 25}</Text>
                 </View>
                 
                 <View style={styles.aiInsightBox}>
                   <Activity color={colors.primary} size={16} />
                   <Text style={styles.aiInsightText}>
                     <Text style={{fontWeight: 'bold'}}>Profile Insight: </Text>
-                    Pricing adjusted dynamically for {zone}, factoring active weather patterns and region history.
+                    {mockUserData?.profileInsight || `Pricing adjusted dynamically for ${zone}, factoring active weather patterns and region history.`}
                   </Text>
                 </View>
               </View>
@@ -491,11 +527,48 @@ export default function OnboardingScreen({ onComplete }) {
 
               <TouchableOpacity
                 style={[styles.button, { marginTop: 10 }]}
-                onPress={() => onComplete({ platform, zone, premium: getPremium(), user: mockUserData, locationObj })}
+                onPress={async () => {
+                  try {
+                    const host = Platform?.OS === 'web' ? 'localhost:8000' : '192.168.1.110:8000';
+                    
+                    // Check if they already paid their premium recently
+                    const walletRes = await fetch(`http://${host}/wallet`, {
+                      headers: { 'Authorization': `Bearer ${mockUserData.token}` }
+                    });
+                    
+                    if (walletRes.ok) {
+                      const data = await walletRes.json();
+                      const alreadyPaid = data.history?.some(tx => tx.hazard_type === 'premium');
+                      
+                      if (!alreadyPaid) {
+                        // Deduct initial premium if they haven't paid yet
+                        const premiumAmount = mockUserData?.premium || 25;
+                        await fetch(`http://${host}/wallet/transaction`, {
+                          method: 'POST',
+                          headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${mockUserData.token}`
+                          },
+                          body: JSON.stringify({
+                            amount: -premiumAmount,
+                            hazard_type: 'premium',
+                            reason: 'Weekly Premium Deduction'
+                          })
+                        });
+                      } else {
+                        console.log("User already has an active premium subscription. Skipping deduction.");
+                      }
+                    }
+                  } catch (err) {
+                    console.error("Premium deduction failed", err);
+                  }
+                  
+                  onComplete({ platform, zone, premium: mockUserData?.premium || 25, user: mockUserData, locationObj, profileInsight: mockUserData?.profileInsight });
+                }}
               >
                 <Text style={styles.buttonText}>Subscribe & Start Shift</Text>
               </TouchableOpacity>
-              <Text style={styles.fineprint}>By subscribing, ₹{getPremium()} will be deducted from your {platform === 'zepto' ? 'Zepto' : platform === 'blinkit' ? 'Blinkit' : 'Instamart'} payout weekly.</Text>
+              <Text style={styles.fineprint}>By subscribing, ₹{mockUserData?.premium || 25} will be deducted from your {platform === 'zepto' ? 'Zepto' : platform === 'blinkit' ? 'Blinkit' : 'Instamart'} payout weekly.</Text>
             </View>
           )}
 

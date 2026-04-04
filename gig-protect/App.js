@@ -27,9 +27,9 @@ function MainApp() {
       case 'policy':
         return <PolicyScreen userProfile={userProfile} />;
       case 'hazard':
-        return <ReportHazardScreen />;
+        return <ReportHazardScreen userProfile={userProfile} />;
       case 'wallet':
-        return <WalletScreen />;
+        return <WalletScreen userProfile={userProfile} />;
       default:
         return <DashboardScreen userProfile={userProfile} />;
     }

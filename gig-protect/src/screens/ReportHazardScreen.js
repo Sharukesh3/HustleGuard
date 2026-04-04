@@ -7,7 +7,9 @@ import { useThemeColors } from '../theme/colors';
 
 const { width } = Dimensions.get('window');
 
-export default function ReportHazardScreen() {
+import { Platform } from 'react-native';
+
+export default function ReportHazardScreen({ userProfile }) {
   const [photoState, setPhotoState] = useState('idle'); // idle, scanning, result
   const colors = useThemeColors();
   const styles = getStyles(colors);
@@ -33,11 +35,33 @@ export default function ReportHazardScreen() {
     ).start();
   };
 
-  const simulatePhotoUpload = () => {
+  const simulatePhotoUpload = async () => {
     setPhotoState('scanning');
     startScanAnim();
     
-    setTimeout(() => {
+    // Simulate API fetch delay
+    setTimeout(async () => {
+      // POST the manual hazard transaction!
+      try {
+        if (userProfile && userProfile.user && userProfile.user.token) {
+          const host = Platform?.OS === 'web' ? 'localhost:8000' : '192.168.1.110:8000';
+          await fetch(`http://${host}/wallet/transaction`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${userProfile.user.token}`
+            },
+            body: JSON.stringify({
+              amount: 50,
+              hazard_type: 'Reported Hazard',
+              reason: 'Manual Photographic Hazard Report'
+            })
+          });
+        }
+      } catch (err) {
+        console.error('Hazard report payout failed:', err);
+      }
+
       setPhotoState('result');
       scanLineAnim.stopAnimation();
       pulseAnim.stopAnimation();
