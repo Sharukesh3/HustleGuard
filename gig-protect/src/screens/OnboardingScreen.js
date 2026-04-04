@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Animated, Dimensions, Easing, TextInput, KeyboardAvoidingView, Platform, Alert } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { ShieldAlert, MapPin, Bike, CheckCircle2, Cpu, Phone, KeyRound, Link, Activity } from 'lucide-react-native';
+import { ShieldAlert, MapPin, Bike, CheckCircle2, XCircle, Cpu, Phone, KeyRound, Link, Activity } from 'lucide-react-native';
 import * as Location from 'expo-location';
 import { useThemeColors } from '../theme/colors';
 
@@ -242,38 +242,64 @@ export default function OnboardingScreen({ onComplete }) {
     setCalculating(true);
     startPulse();
     
-    // Call the real backend API for pricing logic
     try {
-        const destLat = locationObj?.coords?.latitude + 0.05 || 12.9260; // Mock a nearby destination to get traffic
-        const destLon = locationObj?.coords?.longitude + 0.05 || 77.6229;
-        const apiLat = locationObj?.coords?.latitude || 12.9716;
-        const apiLon = locationObj?.coords?.longitude || 77.5946;
-        const currentCity = zone.split(",")[0] || "Bangalore";
+        const host = Platform.OS === 'web' ? 'localhost:8000' : '192.168.1.110:8000';
         
-        // Connect to local backend. Assuming IP 192.168.1.110 based on earlier API logic. Replace if needed with localhost/10.0.2.2 
-        let apiUrl = `http://192.168.1.110:8000/premium/calculate?lat=${apiLat}&lng=${apiLon}&city=${currentCity}&dest_lat=${destLat}&dest_lon=${destLon}`;
-        
-        if (Platform.OS === 'web') {
-           apiUrl = `http://localhost:8000/premium/calculate?lat=${apiLat}&lng=${apiLon}&city=${currentCity}&dest_lat=${destLat}&dest_lon=${destLon}`;
+        // First check if the user has already paid the premium to save API calls
+        let alreadyPaidAmount = null;
+        if (mockUserData?.token) {
+          try {
+            const walletRes = await fetch(`http://${host}/wallet`, {
+              headers: { 'Authorization': `Bearer ${mockUserData.token}` }
+            });
+            if (walletRes.ok) {
+              const walletData = await walletRes.json();
+              const premiumTx = walletData.history?.find(tx => tx.hazard_type === 'premium');
+              if (premiumTx && premiumTx.amount < 0) {
+                alreadyPaidAmount = Math.abs(premiumTx.amount);
+              }
+            }
+          } catch (e) {
+            console.log("Could not check wallet for previous premium:", e);
+          }
         }
-        
-        console.log("Fetching real premium from:", apiUrl);
+
+        if (alreadyPaidAmount) {
+          console.log("User already has an active premium subscription. Skipping recalculation.");
+          setMockUserData(prev => ({
+             ...prev,
+             premium: alreadyPaidAmount,
+             basePremium: alreadyPaidAmount,
+             profileInsight: "Active premium subscription detected. Pricing locked for the current cycle."
+          }));
+        } else {
+          // Call the real backend API for pricing logic if not paid
+          const destLat = locationObj?.coords?.latitude + 0.05 || 12.9260; // Mock a nearby destination to get traffic
+          const destLon = locationObj?.coords?.longitude + 0.05 || 77.6229;
+          const apiLat = locationObj?.coords?.latitude || 12.9716;
+          const apiLon = locationObj?.coords?.longitude || 77.5946;
+          const currentCity = zone.split(",")[0] || "Bangalore";
+          
+          let apiUrl = `http://${host}/premium/calculate?lat=${apiLat}&lng=${apiLon}&city=${currentCity}&dest_lat=${destLat}&dest_lon=${destLon}`;
+          
+          console.log("Fetching real premium from:", apiUrl);
           const res = await fetch(apiUrl, {
               headers: {
                   'Authorization': `Bearer ${mockUserData.token}`
               }
           });
-        if (!res.ok) throw new Error("API failed");
-        const data = await res.json();
-        
-        // Merge the ML API pricing insights securely to the user profile
-        setMockUserData(prev => ({
-           ...prev,
-           premium: data.final_premium,
-           basePremium: data.base_premium,
-           profileInsight: data.overall_reason,
-           pricingFactors: data.factors
-        }));
+          if (!res.ok) throw new Error("API failed");
+          const data = await res.json();
+          
+          // Merge the ML API pricing insights securely to the user profile
+          setMockUserData(prev => ({
+             ...prev,
+             premium: data.final_premium,
+             basePremium: data.base_premium,
+             profileInsight: data.overall_reason,
+             pricingFactors: data.factors
+          }));
+        }
     } catch (e) {
         console.error("Premium Calc Error fallback:", e);
         // Fallback simulated logic if server isn't reachable
@@ -523,6 +549,13 @@ export default function OnboardingScreen({ onComplete }) {
                 <View style={styles.coverageItemRow}><CheckCircle2 color={colors.primary} size={18}/><Text style={styles.coverageItemText}>Severe Weather & Waterlogging (API Triggered)</Text></View>
                 <View style={styles.coverageItemRow}><CheckCircle2 color={colors.primary} size={18}/><Text style={styles.coverageItemText}>Apartment & Gateway Delays</Text></View>
                 <View style={styles.coverageItemRow}><CheckCircle2 color={colors.primary} size={18}/><Text style={styles.coverageItemText}>System Outages & Unmapped Hazards</Text></View>
+
+                <View style={{ marginTop: 15 }} />
+                
+                <Text style={[styles.coverageHeader, { color: colors.danger }]}>Not Included:</Text>
+                <View style={styles.coverageItemRow}><XCircle color={colors.danger} size={18}/><Text style={styles.coverageItemText}>Life Insurance</Text></View>
+                <View style={styles.coverageItemRow}><XCircle color={colors.danger} size={18}/><Text style={styles.coverageItemText}>Accidental Insurance</Text></View>
+                <View style={styles.coverageItemRow}><XCircle color={colors.danger} size={18}/><Text style={styles.coverageItemText}>Vehicle Insurance & Damage</Text></View>
               </View>
 
               <TouchableOpacity
