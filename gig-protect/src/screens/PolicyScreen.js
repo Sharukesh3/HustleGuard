@@ -2,7 +2,7 @@ import React, { useRef, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Dimensions, Animated, Easing } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
-import { ShieldCheck, Calendar, FileText, AlertCircle, RefreshCw, Layers } from 'lucide-react-native';
+import { ShieldCheck, Calendar, FileText, AlertCircle, RefreshCw, Layers, Activity } from 'lucide-react-native';
 import { useThemeColors } from '../theme/colors';
 
 const { width } = Dimensions.get('window');
@@ -91,6 +91,16 @@ export default function PolicyScreen({ userProfile }) {
               </View>
            </LinearGradient>
         </Animated.View>
+
+        {userProfile?.profileInsight && (
+            <View style={[styles.disclaimerContainer, { marginBottom: 20, backgroundColor: colors.primaryMuted + '20', borderColor: colors.primary, borderWidth: 1 }]}>
+               <Activity color={colors.primary} size={20} style={{marginRight: 10}} />
+               <View style={{flex: 1}}>
+                   <Text style={{color: colors.primary, fontWeight: 'bold', marginBottom: 2}}>Dynamic Pricing Insight</Text>
+                   <Text style={{color: colors.text}}>{userProfile.profileInsight}</Text>
+               </View>
+            </View>
+        )}
 
         <Text style={styles.sectionTitle}>Coverage Details & Exclusions</Text>
         <Text style={styles.sectionSubtitle}>Zero-touch claims processed automatically via designated API triggers.</Text>

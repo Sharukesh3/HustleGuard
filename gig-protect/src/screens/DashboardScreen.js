@@ -13,6 +13,7 @@ const { width } = Dimensions.get('window');
 export default function DashboardScreen({ userProfile }) {
   const [activeHazard, setActiveHazard] = useState(null); 
   const [claimStatus, setClaimStatus] = useState(null); 
+  const [autoClaimReason, setAutoClaimReason] = useState(null); // Traces auto reason from backend
   const [isExpanded, setIsExpanded] = useState(false);
   const [showSimulatedRoute, setShowSimulatedRoute] = useState(false);
   const [deviceHeading, setDeviceHeading] = useState(0);
@@ -39,6 +40,31 @@ export default function DashboardScreen({ userProfile }) {
   };
 
   useEffect(() => {
+    let ws;
+    if (userProfile && userProfile?.user?.id) {
+       const host = Platform.OS === 'web' ? 'localhost:8000' : '192.168.1.110:8000';
+       ws = new WebSocket(`ws://${host}/ws/telemetry/${userProfile.user.id}?token=${userProfile.user.token}`);
+       
+       ws.onopen = () => {
+          console.log("Telemetry WS Connected to Central System!");
+          ws.send(JSON.stringify({
+             lat: userProfile.locationObj?.coords?.latitude || 12.9716,
+             lng: userProfile.locationObj?.coords?.longitude || 77.5946,
+             city: userProfile.zone?.split(",")[0] || 'Bangalore'
+          }));
+       };
+       
+       ws.onmessage = (e) => {
+          try {
+             const packet = JSON.parse(e.data);
+             if (packet.type === 'auto_payout') {
+                console.log("Received AI Auto Trigger!", packet.reason);
+                triggerHazard(packet.hazard, packet.reason);
+             }
+          } catch(err) { console.error("WS Parse Err", err); }
+       };
+    }
+    
     Animated.loop(
       Animated.timing(mapPulseAnim, {
         toValue: 1,
@@ -67,8 +93,9 @@ export default function DashboardScreen({ userProfile }) {
     };
   }, []);
 
-  const triggerHazard = (type) => {
+  const triggerHazard = async (type, overrideReason = null) => {
     setActiveHazard(type);
+    setAutoClaimReason(overrideReason);
     
     // Slide in Processing Overlay
     setClaimStatus('processing');
@@ -77,6 +104,31 @@ export default function DashboardScreen({ userProfile }) {
       Animated.timing(overlayScaleAnim, { toValue: 1, duration: 400, easing: Easing.out(Easing.back(1.5)), useNativeDriver: true }),
       Animated.timing(overlayOpacityAnim, { toValue: 1, duration: 300, useNativeDriver: true })
     ]).start();
+
+    // Determine payout amount
+    let payoutAmount = 50; 
+    if(type === 'waterlogging') payoutAmount = 75;
+    if(type === 'accident') payoutAmount = 150;
+
+    try {
+      if (userProfile && userProfile.user && userProfile.user.token) {
+        const host = Platform?.OS === 'web' ? 'localhost:8000' : '192.168.1.110:8000';
+        await fetch(`http://${host}/wallet/transaction`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${userProfile.user.token}`
+          },
+          body: JSON.stringify({
+            amount: payoutAmount,
+            hazard_type: type,
+            reason: overrideReason || `Reported ${type} hazard during shift`
+          })
+        });
+      }
+    } catch (err) {
+      console.error("Manual transaction failed", err);
+    }
 
     // Simulate API Auth & Payout
     setTimeout(() => {
@@ -91,6 +143,7 @@ export default function DashboardScreen({ userProfile }) {
     ]).start(() => {
       setClaimStatus(null);
       setActiveHazard(null);
+      setAutoClaimReason(null);
       overlayScaleAnim.setValue(0.9);
     });
   };
@@ -280,11 +333,18 @@ export default function DashboardScreen({ userProfile }) {
                     <ShieldCheck color={colors.primary} size={50} />
                   </View>
                   <Text style={styles.claimTitle}>AI Analysing {activeConfig.API}</Text>
-                  <View style={styles.verifyingList}>
-                     <Text style={styles.verifyingItem}>• Fetching latest endpoint data...</Text>
-                     <Text style={styles.verifyingItem}>• Triangulating GPS coordinates...</Text>
-                     <Text style={styles.verifyingItem}>• Matching policy bounds...</Text>
-                  </View>
+                    {autoClaimReason ? (
+                       <View style={styles.verifyingList}>
+                         <Text style={{color: colors.primary, fontWeight: '700', marginBottom: 10, fontSize: 16}}>System Alert:</Text>
+                         <Text style={{color: colors.text}}>{autoClaimReason}</Text>
+                       </View>
+                    ) : (
+                       <View style={styles.verifyingList}>
+                         <Text style={styles.verifyingItem}>• Fetching latest endpoint data...</Text>
+                         <Text style={styles.verifyingItem}>• Triangulating GPS coordinates...</Text>
+                         <Text style={styles.verifyingItem}>• Matching policy bounds...</Text>
+                       </View>
+                    )}
                   <Text style={styles.processingWait}>Please wait, verifying parameters.</Text>
                 </>
               ) : (

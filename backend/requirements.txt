@@ -1,0 +1,10 @@
+fastapi
+uvicorn
+pydantic
+python-dotenv
+httpx
+geopy
+groq
+tavily-python
+firecrawl-py
+websockets

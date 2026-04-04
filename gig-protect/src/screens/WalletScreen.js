@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Dimensions, Animated, Easing } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Dimensions, Animated, Easing, Platform } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Shield, RefreshCw, ArrowUpRight, CheckCircle, Clock } from 'lucide-react-native';
@@ -7,10 +7,11 @@ import { useThemeColors } from '../theme/colors';
 
 const { width } = Dimensions.get('window');
 
-export default function WalletScreen() {
+export default function WalletScreen({ userProfile }) {
   const [activeTab, setActiveTab] = useState('wallet'); // 'wallet' | 'claims'
-  const [balance, setBalance] = useState(1150);
+  const [balance, setBalance] = useState(0);
   const [isWithdrawing, setIsWithdrawing] = useState(false);
+  const [transactions, setTransactions] = useState([]);
   
   const colors = useThemeColors();
   const styles = getStyles(colors);
@@ -19,28 +20,77 @@ export default function WalletScreen() {
   const balanceScaleAnim = useRef(new Animated.Value(1)).current;
   const listFadeAnim = useRef(new Animated.Value(0)).current;
 
+  // Fetch persistent wallet data
   useEffect(() => {
+      if (userProfile && userProfile.user && userProfile.user.token) {
+        const host = Platform?.OS === 'web' ? 'localhost:8000' : '192.168.1.110:8000';
+        fetch(`http://${host}/wallet`, {
+          headers: {
+            'Authorization': `Bearer ${userProfile.user.token}`
+          }
+        })
+        .then(res => res.json())
+      .then(data => {
+        if(data.history) {
+          setBalance(data.balance);
+          const formattedTx = data.history.map(tx => ({
+             id: tx.id,
+             title: tx.hazard_type === 'premium' ? 'Weekly Premium' : (tx.hazard_type || 'Parametric Trigger'),
+             type: tx.amount < 0 ? 'debit' : 'credit',
+             amount: Math.abs(tx.amount),
+             date: new Date(tx.timestamp).toLocaleString(),
+             status: 'Completed',
+             reason: tx.reason
+          }));
+          setTransactions(formattedTx);
+          
+          // Populate claims list with only positive hazard payouts (not premium deductions or withdrawals)
+          const hazardClaims = formattedTx
+             .filter(tx => tx.type === 'credit' && tx.amount > 0)
+             .map(tx => ({
+                id: `HG-${tx.id}X`,
+                title: tx.title,
+                date: tx.date.split(',')[0], // Just date part
+                amount: tx.amount,
+                status: 'Approved'
+             }));
+          setClaims(hazardClaims);
+        }
+      })
+      .catch(err => console.error("Error fetching wallet", err));
+    }
     Animated.timing(listFadeAnim, { toValue: 1, duration: 600, useNativeDriver: true }).start();
-  }, [activeTab]);
+  }, [activeTab, userProfile]);
 
-  const [transactions, setTransactions] = useState([
-    { id: 1, title: 'Rain Disruption Cover', type: 'credit', amount: 150, date: 'Today, 2:40 PM', status: 'Completed' },
-    { id: 2, title: 'Hazard Detour Payout', type: 'credit', amount: 50, date: 'Today, 1:15 PM', status: 'Completed' },
-    { id: 3, title: 'Weekly Premium Deduction', type: 'debit', amount: 25, date: 'Monday', status: 'Paid' },
-  ]);
+  const [claims, setClaims] = useState([]);
 
-  const [claims] = useState([
-    { id: 'HG-9821A', title: 'Severe Rain Delay', date: '21 Mar 2026', amount: 150, status: 'Approved' },
-    { id: 'HG-8314X', title: 'Road Blockage', date: '18 Mar 2026', amount: 50, status: 'Approved' },
-    { id: 'HG-7721B', title: 'Network Outage', date: '15 Mar 2026', amount: 0, status: 'Rejected' },
-  ]);
-
-  const handleWithdraw = () => {
+  const handleWithdraw = async () => {
     setIsWithdrawing(true);
     Animated.sequence([
       Animated.timing(balanceScaleAnim, { toValue: 0.95, duration: 150, useNativeDriver: true }),
       Animated.timing(balanceScaleAnim, { toValue: 1, duration: 150, useNativeDriver: true })
     ]).start();
+
+    // Call backend to deduct
+    try {
+      if (userProfile && userProfile.user && userProfile.user.token) {
+        const host = Platform?.OS === 'web' ? 'localhost:8000' : '192.168.1.110:8000';
+        await fetch(`http://${host}/wallet/transaction`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${userProfile.user.token}`
+          },
+          body: JSON.stringify({
+            amount: -balance,
+            hazard_type: 'withdrawal',
+            reason: 'Instant UPI Payout'
+          })
+        });
+      }
+    } catch (err) {
+      console.error("Instant withdraw failed", err);
+    }
 
     setTimeout(() => {
       setTransactions([
