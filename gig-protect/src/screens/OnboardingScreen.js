@@ -324,6 +324,7 @@ export default function OnboardingScreen({ onComplete }) {
             pulseAnim.stopAnimation();
             handleNextStep(5);
           }
+    }
   };
 
   return (
