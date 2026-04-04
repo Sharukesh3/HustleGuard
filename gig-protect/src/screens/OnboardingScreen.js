@@ -242,6 +242,7 @@ export default function OnboardingScreen({ onComplete }) {
     setCalculating(true);
     startPulse();
     
+    let skipNext = false;
     try {
         const host = Platform.OS === 'web' ? 'localhost:8000' : '192.168.1.110:8000';
         
@@ -266,12 +267,19 @@ export default function OnboardingScreen({ onComplete }) {
 
         if (alreadyPaidAmount) {
           console.log("User already has an active premium subscription. Skipping recalculation.");
-          setMockUserData(prev => ({
-             ...prev,
-             premium: alreadyPaidAmount,
-             basePremium: alreadyPaidAmount,
-             profileInsight: "Active premium subscription detected. Pricing locked for the current cycle."
-          }));
+          skipNext = true;
+          const updatedUser = {
+            ...mockUserData,
+            premium: alreadyPaidAmount,
+            basePremium: alreadyPaidAmount,
+            profileInsight: "Active premium subscription detected. Pricing locked for the current cycle."
+          };
+          setMockUserData(updatedUser);
+          
+          setCalculating(false);
+          pulseAnim.stopAnimation();
+          onComplete({ platform, zone, premium: alreadyPaidAmount, user: updatedUser, locationObj, profileInsight: updatedUser.profileInsight });
+          return;
         } else {
           // Call the real backend API for pricing logic if not paid
           const destLat = locationObj?.coords?.latitude + 0.05 || 12.9260; // Mock a nearby destination to get traffic
@@ -311,10 +319,11 @@ export default function OnboardingScreen({ onComplete }) {
            profileInsight: "Premium adjusted based on localized geographical risks and standard traffic models."
         }));
     } finally {
-        setCalculating(false);
-        pulseAnim.stopAnimation();
-        handleNextStep(5);
-    }
+          if (!skipNext) {
+            setCalculating(false);
+            pulseAnim.stopAnimation();
+            handleNextStep(5);
+          }
   };
 
   return (
