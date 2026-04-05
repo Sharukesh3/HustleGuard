@@ -32,7 +32,14 @@ jobs:
         run: npm install
 
       - name: 🚀 Build APK on EAS Cloud
-        run: eas build --platform android --profile github-release --non-interactive --wait --output ./app-release.apk
+        run: |
+          BUILD_JSON=$(eas build --platform android --profile github-release --non-interactive --wait --json)
+          BUILD_URL=$(echo $BUILD_JSON | jq -r '.[0].artifacts.buildUrl')
+          if [ "$BUILD_URL" == "null" ] || [ -z "$BUILD_URL" ]; then
+            BUILD_URL=$(echo $BUILD_JSON | jq -r '.artifacts.buildUrl')
+          fi
+          echo "Build URL: $BUILD_URL"
+          curl -L -o app-release.apk "$BUILD_URL"
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
 
