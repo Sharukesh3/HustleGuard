@@ -15,10 +15,12 @@
       "autoIncrement": true
     },
     "github-release": {
+      "android": {
+        "buildType": "apk"
+      },
       "env": {
         "APP_ENV": "production"
       },
-      "buildType": "apk",
       "distribution": "internal"
     }
   },
