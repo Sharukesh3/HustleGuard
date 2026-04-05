@@ -24,7 +24,10 @@ load_dotenv()
 # Lifecycle block to properly initialize Database Models when the app starts, not on import
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    Base.metadata.create_all(bind=engine)
+    try:
+        Base.metadata.create_all(bind=engine)
+    except Exception as e:
+        print(f"Database initialization bypassed (table likely exists or multi-worker concurrency issue): {e}")
     yield
 
 app = FastAPI(title="GigProtect Insurance API", lifespan=lifespan)
