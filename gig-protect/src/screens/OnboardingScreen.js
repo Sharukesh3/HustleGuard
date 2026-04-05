@@ -187,7 +187,7 @@ export default function OnboardingScreen({ onComplete }) {
       const fullNumber = `+91${mobileNumber}`;
       console.log(`Verifying OTP ${inputOtp} for ${fullNumber}`);
       
-      let authUrl = ${getBaseUrl()}/auth/verify-otp; const res = await fetch(authUrl, {
+      let authUrl = `${getBaseUrl()}/auth/verify-otp`; const res = await fetch(authUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ phone: fullNumber, otp: inputOtp })
