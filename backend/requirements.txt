@@ -8,3 +8,6 @@ groq
 tavily-python
 firecrawl-py
 websockets
+gunicorn
+SQLAlchemy
+psycopg2-binary

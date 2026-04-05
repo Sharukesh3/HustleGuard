@@ -1,3 +1,4 @@
+import { getBaseUrl, getWsUrl } from '../config';
 import React, { useState, useRef } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Animated, Easing, Dimensions } from 'react-native';
 import { Camera, AlertTriangle, ScanLine, CheckCircle2, ShieldAlert } from 'lucide-react-native';
@@ -44,8 +45,8 @@ export default function ReportHazardScreen({ userProfile }) {
       // POST the manual hazard transaction!
       try {
         if (userProfile && userProfile.user && userProfile.user.token) {
-          const host = Platform?.OS === 'web' ? 'localhost:8000' : '192.168.1.110:8000';
-          await fetch(`http://${host}/wallet/transaction`, {
+          
+          await fetch(`${getBaseUrl()}/wallet/transaction`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',

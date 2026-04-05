@@ -1,3 +1,4 @@
+import { getBaseUrl, getWsUrl } from '../config';
 import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Animated, Dimensions, Easing, TextInput, KeyboardAvoidingView, Platform, Alert } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -69,7 +70,7 @@ export default function OnboardingScreen({ onComplete }) {
       const fullNumber = `+91${mobileNumber}`;
       console.log(`Sending Real OTP request to backend for ${fullNumber}`);
       
-      const response = await fetch('http://192.168.1.110:8000/auth/send-otp', {
+      const response = await fetch(${getBaseUrl()}/auth/send-otp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ phone: fullNumber })
@@ -186,7 +187,7 @@ export default function OnboardingScreen({ onComplete }) {
       const fullNumber = `+91${mobileNumber}`;
       console.log(`Verifying OTP ${inputOtp} for ${fullNumber}`);
       
-      let authUrl = Platform.OS==='web'?'http://localhost:8000/auth/verify-otp':'http://192.168.1.110:8000/auth/verify-otp'; const res = await fetch(authUrl, {
+      let authUrl = ${getBaseUrl()}/auth/verify-otp; const res = await fetch(authUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ phone: fullNumber, otp: inputOtp })
@@ -244,13 +245,13 @@ export default function OnboardingScreen({ onComplete }) {
     
     let skipNext = false;
     try {
-        const host = Platform.OS === 'web' ? 'localhost:8000' : '192.168.1.110:8000';
+        
         
         // First check if the user has already paid the premium to save API calls
         let alreadyPaidAmount = null;
         if (mockUserData?.token) {
           try {
-            const walletRes = await fetch(`http://${host}/wallet`, {
+            const walletRes = await fetch(`${getBaseUrl()}/wallet`, {
               headers: { 'Authorization': `Bearer ${mockUserData.token}` }
             });
             if (walletRes.ok) {
@@ -288,7 +289,7 @@ export default function OnboardingScreen({ onComplete }) {
           const apiLon = locationObj?.coords?.longitude || 77.5946;
           const currentCity = zone.split(",")[0] || "Bangalore";
           
-          let apiUrl = `http://${host}/premium/calculate?lat=${apiLat}&lng=${apiLon}&city=${currentCity}&dest_lat=${destLat}&dest_lon=${destLon}`;
+          let apiUrl = `${getBaseUrl()}/premium/calculate?lat=${apiLat}&lng=${apiLon}&city=${currentCity}&dest_lat=${destLat}&dest_lon=${destLon}`;
           
           console.log("Fetching real premium from:", apiUrl);
           const res = await fetch(apiUrl, {
@@ -572,10 +573,10 @@ export default function OnboardingScreen({ onComplete }) {
                 style={[styles.button, { marginTop: 10 }]}
                 onPress={async () => {
                   try {
-                    const host = Platform?.OS === 'web' ? 'localhost:8000' : '192.168.1.110:8000';
+                    
                     
                     // Check if they already paid their premium recently
-                    const walletRes = await fetch(`http://${host}/wallet`, {
+                    const walletRes = await fetch(`${getBaseUrl()}/wallet`, {
                       headers: { 'Authorization': `Bearer ${mockUserData.token}` }
                     });
                     
@@ -586,7 +587,7 @@ export default function OnboardingScreen({ onComplete }) {
                       if (!alreadyPaid) {
                         // Deduct initial premium if they haven't paid yet
                         const premiumAmount = mockUserData?.premium || 25;
-                        await fetch(`http://${host}/wallet/transaction`, {
+                        await fetch(`${getBaseUrl()}/wallet/transaction`, {
                           method: 'POST',
                           headers: {
                             'Content-Type': 'application/json',

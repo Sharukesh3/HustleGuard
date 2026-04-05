@@ -1,3 +1,4 @@
+import { getBaseUrl, getWsUrl } from '../config';
 import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Animated, Easing, Dimensions, Switch, Platform } from 'react-native';
 import { BlurView } from 'expo-blur';
@@ -42,8 +43,8 @@ export default function DashboardScreen({ userProfile }) {
   useEffect(() => {
     let ws;
     if (userProfile && userProfile?.user?.id) {
-       const host = Platform.OS === 'web' ? 'localhost:8000' : '192.168.1.110:8000';
-       ws = new WebSocket(`ws://${host}/ws/telemetry/${userProfile.user.id}?token=${userProfile.user.token}`);
+       
+       ws = new WebSocket(`${getWsUrl()}/ws/telemetry/${userProfile.user.id}?token=${userProfile.user.token}`);
        
        ws.onopen = () => {
           console.log("Telemetry WS Connected to Central System!");
@@ -112,8 +113,8 @@ export default function DashboardScreen({ userProfile }) {
 
     try {
       if (userProfile && userProfile.user && userProfile.user.token) {
-        const host = Platform?.OS === 'web' ? 'localhost:8000' : '192.168.1.110:8000';
-        await fetch(`http://${host}/wallet/transaction`, {
+        
+        await fetch(`${getBaseUrl()}/wallet/transaction`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',

@@ -1,3 +1,4 @@
+import { getBaseUrl, getWsUrl } from '../config';
 import React, { useState, useRef, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Dimensions, Animated, Easing, Platform } from 'react-native';
 import { BlurView } from 'expo-blur';
@@ -23,8 +24,8 @@ export default function WalletScreen({ userProfile }) {
   // Fetch persistent wallet data
   useEffect(() => {
       if (userProfile && userProfile.user && userProfile.user.token) {
-        const host = Platform?.OS === 'web' ? 'localhost:8000' : '192.168.1.110:8000';
-        fetch(`http://${host}/wallet`, {
+        
+        fetch(`${getBaseUrl()}/wallet`, {
           headers: {
             'Authorization': `Bearer ${userProfile.user.token}`
           }
@@ -74,8 +75,8 @@ export default function WalletScreen({ userProfile }) {
     // Call backend to deduct
     try {
       if (userProfile && userProfile.user && userProfile.user.token) {
-        const host = Platform?.OS === 'web' ? 'localhost:8000' : '192.168.1.110:8000';
-        await fetch(`http://${host}/wallet/transaction`, {
+        
+        await fetch(`${getBaseUrl()}/wallet/transaction`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
