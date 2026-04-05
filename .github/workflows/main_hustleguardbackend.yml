@@ -76,4 +76,5 @@ jobs:
           app-name: 'HustleGuardBackend'
           slot-name: 'Production'
           package: .
+          startup-command: 'gunicorn -w 2 -k uvicorn.workers.UvicornWorker main:app'
           

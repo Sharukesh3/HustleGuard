@@ -17,12 +17,17 @@ import auth
 from risk_model import calculate_premium_multiplier
 from services.external_apis import fetch_weather_data, fetch_traffic_data, analyze_unstructured_risks, analyze_historical_seasonal_risks, generate_overall_pricing_reason
 
+from contextlib import asynccontextmanager
+
 load_dotenv()
 
-# Initialize Database Models
-Base.metadata.create_all(bind=engine)
+# Lifecycle block to properly initialize Database Models when the app starts, not on import
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    Base.metadata.create_all(bind=engine)
+    yield
 
-app = FastAPI(title="GigProtect Insurance API")
+app = FastAPI(title="GigProtect Insurance API", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
