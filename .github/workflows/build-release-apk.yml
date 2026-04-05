@@ -42,6 +42,7 @@ jobs:
           curl -L -o app-release.apk "$BUILD_URL"
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          EXPO_PUBLIC_API_URL: "https://api.hustleguard.backend.sharukesh.tech"
 
       - name: 📦 Publish GitHub Release
         uses: softprops/action-gh-release@v2
