@@ -70,7 +70,7 @@ export default function OnboardingScreen({ onComplete }) {
       const fullNumber = `+91${mobileNumber}`;
       console.log(`Sending Real OTP request to backend for ${fullNumber}`);
       
-      const response = await fetch(${getBaseUrl()}/auth/send-otp', {
+      const response = await fetch(`${getBaseUrl()}/auth/send-otp`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ phone: fullNumber })
