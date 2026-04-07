@@ -12,14 +12,18 @@
       "distribution": "internal"
     },
     "production": {
-      "autoIncrement": true
+      "autoIncrement": true,
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://api.hustleguard.backend.sharukesh.tech"
+      }
     },
     "github-release": {
       "android": {
         "buildType": "apk"
       },
       "env": {
-        "APP_ENV": "production"
+        "APP_ENV": "production",
+        "EXPO_PUBLIC_API_URL": "https://api.hustleguard.backend.sharukesh.tech"
       },
       "distribution": "internal"
     }
