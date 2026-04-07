@@ -43,6 +43,7 @@ jobs:
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
           EXPO_PUBLIC_API_URL: "https://api.hustleguard.backend.sharukesh.tech"
+          GOOGLE_MAPS_API_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY }}
 
       - name: 📦 Publish GitHub Release
         uses: softprops/action-gh-release@v2
