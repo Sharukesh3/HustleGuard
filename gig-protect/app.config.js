@@ -28,7 +28,7 @@ module.exports = {
       package: "com.frosty_07.hustleguard",
       config: {
         googleMaps: {
-          apiKey: process.env.GOOGLE_MAPS_API_KEY
+          apiKey: process.env.GOOGLE_MAPS_API_KEY || "API_KEY_MISSING_FROM_CI"
         }
       }
     },
