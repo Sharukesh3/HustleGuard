@@ -7,6 +7,7 @@ import random
 import asyncio
 from dotenv import load_dotenv
 from sqlalchemy.orm import Session
+from sqlalchemy import text
 from datetime import timedelta
 
 # Import models, db, and auth (must be created below)
@@ -26,6 +27,12 @@ load_dotenv()
 async def lifespan(app: FastAPI):
     try:
         Base.metadata.create_all(bind=engine)
+        # Fix Supabase Security Warning: Supabase flags any table in 'public' without RLS
+        # Since we use FastAPI for all auth, we just enable the flag so the PostgREST public API locks down
+        with engine.connect() as conn:
+            for table_name in Base.metadata.tables.keys():
+                conn.execute(text(f"ALTER TABLE {table_name} ENABLE ROW LEVEL SECURITY;"))
+            conn.commit()
     except Exception as e:
         print(f"Database initialization bypassed (table likely exists or multi-worker concurrency issue): {e}")
     yield
