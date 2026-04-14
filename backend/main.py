@@ -16,7 +16,13 @@ import models
 import auth
 
 from risk_model import calculate_premium_multiplier
+from ml.fraud_model import is_fraudulent_telemetry
 from services.external_apis import fetch_weather_data, fetch_traffic_data, analyze_unstructured_risks, analyze_historical_seasonal_risks, generate_overall_pricing_reason
+from services.vision import analyze_hazard_image
+from services.gcp_storage import upload_to_gcp
+from services.redis_client import redis_cache
+from h3_utils import get_h3_index
+from fastapi import File, UploadFile, Form
 
 from contextlib import asynccontextmanager
 
@@ -51,6 +57,8 @@ app.add_middleware(
 otps = {}
 # Track active websockets for telemetry
 active_connections: Dict[str, WebSocket] = {}
+last_known_locations: Dict[str, str] = {} # rider_id -> h3_hex
+recent_disconnects: List[Dict] = [] # stores {"rider_id": id, "hex": h3_hex, "time": timestamp}
 
 async def parametric_monitor_task():
     """
@@ -193,58 +201,115 @@ async def verify_otp(req: OTPVerify, db: Session = Depends(get_db)):
         "user": {"id": user.id, "phone": user.phone, "name": str(user.name), "balance": user.balance}
     }
 
+@app.post("/fraud/verify-claim")
+async def verify_claim(
+    speed: float = Form(0.0), 
+    gps_accuracy: float = Form(10.0), 
+    distance_covered: float = Form(120.0), 
+    ping_delta: float = Form(5.0),
+    battery_level: float = Form(50.0),
+    is_charging: bool = Form(False),
+    file: UploadFile = File(...),
+    current_user: models.User = Depends(auth.get_current_user)
+):
+    """
+    NEUROSYMBOLIC PIPELINE: Runs telemetry through the PyTorch Autoencoder 
+    and Image upload through YOLO (Neural) + EXIF timestamp mapping (Symbolic)
+    """
+    # 1. Evaluate device telemetry for GPS spoofing anomalies
+    is_spoofed, telemetry_reason = is_fraudulent_telemetry(
+        speed, gps_accuracy, distance_covered, ping_delta, battery_level, is_charging
+    )
+    
+    if is_spoofed:
+        return {"status": "rejected", "reason": telemetry_reason}
+        
+    # 2. Extract uploaded image
+    file_bytes = await file.read()
+    
+    # 3. Real GCP Storage Upload
+    bucket_uri = upload_to_gcp(file_bytes, file.filename)
+    
+    # 4. Neural Vision Service (YOLO + EXIF validation)
+    vision_report = analyze_hazard_image(file_bytes, file.filename)
+    
+    if not vision_report["vision_passed"]:
+        return {"status": "rejected", "reason": vision_report["vision_reason"], "gcp_uri": bucket_uri}
+        
+    # Valid Claim: The Telemetry is organic and the User Photo has proper metadata + YOLO boxes.
+    return {
+        "status": "approved",
+        "reason": "Claim automatically approved via Neurosymbolic validation.",
+        "gcp_uri": bucket_uri,
+        "yolo_analysis": {
+            "classes": vision_report["yolo_detections"], 
+            "confidence": vision_report["yolo_confidence"]
+        }
+    }
+
 @app.get("/premium/calculate")
 async def calculate_premium(lat: float, lng: float, 
                             dest_lat: Optional[float] = None, dest_lon: Optional[float] = None,
                             city: Optional[str] = "Bangalore",
                             current_user: models.User = Depends(auth.get_current_user)):
-    """
-    Calculate dynamic weekly premium based on LIVE current factors AND Historical Seasonal factors.
-    """
-    # 1. Fetch real-time weather
-    weather_data = await fetch_weather_data(lat, lng)
+    # 1. Hyper-local spatial indexing via H3 (Resolution 9)
+    # This identifies the roughly ~0.1 sq km block the rider is currently standing in.
+    h3_hex = get_h3_index(lat, lng)
     
-    # 2. Fetch traffic delay factor (if destination is provided)
-    if dest_lat and dest_lon:
-        traffic_data = await fetch_traffic_data(lat, lng, dest_lat, dest_lon)
-    else:
-        # Give a default/neutral response if no route
-        traffic_data = {"delay_factor": 1.0}
-        
-    # 3. Analyze recent unstructured risks (live news, active strikes, recent grid alerts)
-    social_data = await analyze_unstructured_risks(city)
+    # Cache key format: "premium:city:h3_hex"
+    # To reduce LLM costs, we cache the hyper-local baseline values for 1 hour.
+    cache_key = f"premium:{city}:{h3_hex}"
     
-    # 4. Analyze baseline historical & seasonal risks for the current month
-    #    (e.g., Delhi smog season, Mumbai monsoons, infrastructure history)
-    historical_data = await analyze_historical_seasonal_risks(city)
+    # 0. Check Redis cache for recent calculation
+    cached_data = redis_cache.get(cache_key)
+    if cached_data:
+        print(f"📦 [REDIS CACHE HIT] Returned premium data for hex {h3_hex}")
+        # Insert telemetry hook to update worker's location silently
+        return cached_data
+
+    # A. Live Telemetry
+    weather_data_task = fetch_weather_data(lat, lng)
+    traffic_data_task = fetch_traffic_data(lat, lng, dest_lat or lat, dest_lon or lng)
     
-    # Send factors to risk_model to output the final weekly multiplier
-    multiplier = calculate_premium_multiplier(
-        weather_data=weather_data,
-        traffic_data=traffic_data,
-        social_score=social_data.get("score", 0.0),
-        historical_score=historical_data.get("score", 0.0)
+    # B. Live and Historical Context via LLM (Heavy computation)
+    unstructured_risks_task = analyze_unstructured_risks(city)
+    historical_risks_task = analyze_historical_seasonal_risks(city)
+    
+    weather_data, traffic_data, social_risk, historical_risk = await asyncio.gather(
+        weather_data_task, traffic_data_task, unstructured_risks_task, historical_risks_task
     )
     
-    base_premium = 25
-    final_premium = round(base_premium * multiplier, 2)
+    # Run the Neurosymbolic engine
+    final_multiplier = calculate_premium_multiplier(
+        weather_data, traffic_data, social_risk.get("score"), historical_risk.get("score")
+    )
+    
+    base_premium = 25.0  # Base cost INR
+    final_premium = round(base_premium * final_multiplier, 0)
     
     factors = {
-        "weather_live": weather_data,
-        "traffic_live": traffic_data,
-        "social_live": social_data,
-        "historical_baseline": historical_data
+        "hex_location": h3_hex,
+        "weather": weather_data,
+        "traffic": traffic_data,
+        "social": social_risk,
+        "historical": historical_risk
     }
     
-    overall_reason = await generate_overall_pricing_reason(city, base_premium, final_premium, factors)
+    insight = await generate_overall_pricing_reason(city, base_premium, final_premium, factors)
     
-    return {
+    response_payload = {
+        "worker_hex": h3_hex,
         "base_premium": base_premium,
-        "multiplier": round(multiplier, 2),
         "final_premium": final_premium,
-        "overall_reason": overall_reason,
-        "factors": factors
+        "multiplier": round(final_multiplier, 2),
+        "insight_summary": insight,
+        "raw_factors": factors
     }
+    
+    # Cache the result in Redis for an hour for any other workers entering this hex
+    redis_cache.set(cache_key, response_payload, expire_seconds=3600)
+    
+    return response_payload
 
 @app.websocket("/ws/telemetry/{rider_id}")
 async def websocket_telemetry(websocket: WebSocket, rider_id: str, token: str = None, db: Session = Depends(get_db)):
@@ -271,16 +336,74 @@ async def websocket_telemetry(websocket: WebSocket, rider_id: str, token: str = 
     active_connections[rider_id] = websocket
     print(f"Rider {rider_id} authenticated and connected. Active websockets: {len(active_connections)}")
     try:
+        import json
+        import time
         while True:
             # Receive continuous background GPS telemetry here
             data = await websocket.receive_text()
+            payload = json.loads(data)
+            if "lat" in payload and "lng" in payload:
+                # Track last location for dead zone computation
+                h3_hex = get_h3_index(payload["lat"], payload["lng"])
+                last_known_locations[rider_id] = h3_hex
+                
             # Echo back or process the coordinates to verify liveness
-            # In a real system, you'd cluster disconnects by coordinate.
-            # print(f"Telemetry from {rider_id}: {data}")
     except WebSocketDisconnect:
+        import time
+        from collections import Counter
+        
         print(f"Rider {rider_id} disconnected unexpectedly. Tracking potential ISP dead zone cluster.")
         if rider_id in active_connections:
             del active_connections[rider_id]
+            
+        disconnected_hex = last_known_locations.get(rider_id, "unknown_hex")
+        
+        # Log disconnect for cluster analysis
+        recent_disconnects.append({
+            "rider_id": rider_id,
+            "hex": disconnected_hex,
+            "time": time.time()
+        })
+        
+        # Prune old disconnects (> 5 minutes ago)
+        current_time = time.time()
+        recent_disconnects[:] = [d for d in recent_disconnects if current_time - d["time"] < 300]
+        
+        # If >= 3 drops in the exact same 10-meter block happen within 5 minutes, we trigger a payout
+        # (Using 3 here instead of 50 for demoability)
+        area_drops = [d["hex"] for d in recent_disconnects if d["hex"] == disconnected_hex]
+        if len(area_drops) >= 3 and disconnected_hex != "unknown_hex":
+            print(f"\n[NETWORK DEAD ZONE DETECTED] {len(area_drops)} riders disconnected in hex {disconnected_hex}.")
+            print("Triggering micro-payouts for all riders impacted by the ISP failure in this area...")
+            
+            affected_riders = [d["rider_id"] for d in recent_disconnects if d["hex"] == disconnected_hex]
+            
+            try:
+                db_session = SessionLocal()
+                payout_amt = 15.0 # Network latency/Cellular drop micro-payout
+                
+                for r_id in set(affected_riders):
+                    r_user = db_session.query(models.User).filter(models.User.id == int(r_id)).first()
+                    if r_user:
+                        new_payout = models.Payout(
+                            user_id=r_user.id,
+                            amount=payout_amt,
+                            hazard_type="ISP_FAILURE",
+                            reason=f"Cellular/WebSocket Drop Cluster in zone {disconnected_hex}"
+                        )
+                        r_user.balance += payout_amt
+                        db_session.add(new_payout)
+                        print(f"-> Paid ₹{payout_amt} to Rider {r_id} for ISP Outage delay.")
+                        
+                db_session.commit()
+            except Exception as e:
+                print(f"Failed to process Dead Zone payout: {e}")
+            finally:
+                if 'db_session' in locals():
+                    db_session.close()
+                    
+            # Clear this incident so it doesn't infinitely loop
+            recent_disconnects[:] = [d for d in recent_disconnects if d["hex"] != disconnected_hex]
 
 @app.get("/wallet")
 async def get_wallet(current_user: models.User = Depends(auth.get_current_user), db: Session = Depends(get_db)):
@@ -302,6 +425,40 @@ async def get_wallet(current_user: models.User = Depends(auth.get_current_user),
         ]
     }
 
+@app.post("/wallet/payout")
+async def process_instant_payout(current_user: models.User = Depends(auth.get_current_user), db: Session = Depends(get_db)):
+    """
+    Simulates a Stripe/Razorpay UPI Instant Payout.
+    Withdraws entire wallet balance to the worker's bank account instantly.
+    """
+    if current_user.balance <= 0:
+        raise HTTPException(status_code=400, detail="Insufficient balance for withdrawal")
+        
+    payout_amount = current_user.balance
+    
+    # 1. Simulate active network delay calling Razorpay/Stripe APIs
+    import asyncio
+    await asyncio.sleep(1.5)
+    
+    # 2. Record the transaction mathematically
+    current_user.balance = 0.0
+    withdrawal_record = models.Payout(
+        user_id=current_user.id,
+        amount=-payout_amount, # Negative for withdrawal
+        hazard_type="Withdrawal",
+        reason=f"Instant UPI Payout via Razorpay/Stripe (Ref: {random.randint(1000000, 9999999)})"
+    )
+    
+    db.add(withdrawal_record)
+    db.commit()
+    
+    return {
+        "status": "success",
+        "message": f"Successfully withdrew ₹{payout_amount} to bank account.",
+        "payout_ref": f"UPI_{random.randint(1000000, 9999999)}",
+        "remaining_balance": 0.0
+    }
+
 @app.post("/wallet/transaction")
 async def create_wallet_transaction(req: WalletTransaction, current_user: models.User = Depends(auth.get_current_user), db: Session = Depends(get_db)):
     """
@@ -319,3 +476,43 @@ async def create_wallet_transaction(req: WalletTransaction, current_user: models
     db.commit()
     db.refresh(new_tx)
     return {"message": "Transaction recorded", "balance": current_user.balance, "tx_id": new_tx.id}
+
+@app.get("/admin/metrics")
+async def get_admin_metrics(db: Session = Depends(get_db)):
+    """
+    Renders Loss Ratios, Predictive Risk, and Claim tallies for the Admin React Native UI.
+    """
+    from sqlalchemy.sql import func
+    
+    # 1. Active Users Count
+    active_users = db.query(models.User).count()
+    
+    # 2. Simulate default base weekly premiums paid by every active system user
+    mined_premiums = active_users * 25.0
+    
+    # 3. Aggregate all positive payouts (where amount > 0)
+    total_payouts_result = db.query(func.sum(models.Payout.amount)).filter(models.Payout.amount > 0).scalar()
+    total_payouts = float(total_payouts_result or 0.0)
+    
+    loss_ratio = round(total_payouts / mined_premiums, 2) if mined_premiums > 0 else 0.0
+    
+    # 4. LLM AI Future Predictions based off historical/live news feeds
+    hist_score = await analyze_historical_seasonal_risks("Bangalore")
+    social_score = await analyze_unstructured_risks("Bangalore")
+    
+    h_val = float(hist_score.get("score", 0.0))
+    if h_val > 0.7:
+        forecast_str = "Severe Weather Alert (Monsoon). High expected parametric payouts."
+    elif h_val > 0.4:
+        forecast_str = "Moderate traffic/weather risks elevated."
+    else:
+        forecast_str = "Clear conditions expected. Minimal payout events."
+        
+    return {
+        "loss_ratio": loss_ratio,
+        "total_premiums": mined_premiums,
+        "total_payouts": total_payouts,
+        "active_policies": active_users,
+        "forecast_7_days": forecast_str,
+        "llm_warnings": social_score.get("reason", "No immediate warnings from Groq LLM NLP Analysis")
+    }
