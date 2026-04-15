@@ -5,6 +5,7 @@ from typing import Optional, Dict, List
 import os
 import random
 import asyncio
+import json
 from dotenv import load_dotenv
 from sqlalchemy.orm import Session
 from sqlalchemy import text
@@ -18,7 +19,7 @@ import auth
 from risk_model import calculate_premium_multiplier
 from ml.fraud_model import is_fraudulent_telemetry
 from services.external_apis import fetch_weather_data, fetch_traffic_data, analyze_unstructured_risks, analyze_historical_seasonal_risks, generate_overall_pricing_reason
-from services.vision import analyze_hazard_image
+from services.vision import analyze_hazard_image, verify_hazard_with_gemini
 from services.gcp_storage import upload_to_gcp
 from services.redis_client import redis_cache
 from h3_utils import get_h3_index
@@ -210,7 +211,8 @@ async def verify_claim(
     battery_level: float = Form(50.0),
     is_charging: bool = Form(False),
     file: UploadFile = File(...),
-    current_user: models.User = Depends(auth.get_current_user)
+    current_user: models.User = Depends(auth.get_current_user),
+    db: Session = Depends(get_db)
 ):
     """
     NEUROSYMBOLIC PIPELINE: Runs telemetry through the PyTorch Autoencoder 
@@ -233,18 +235,93 @@ async def verify_claim(
     # 4. Neural Vision Service (YOLO + EXIF validation)
     vision_report = analyze_hazard_image(file_bytes, file.filename)
     
+    # 5. Store Hazard Report to database 
+    new_report = models.HazardReport(
+        user_id=current_user.id,
+        image_uri=bucket_uri,
+        yolo_detections=json.dumps(vision_report["yolo_detections"]),
+        confidence=vision_report["yolo_confidence"],
+        road_overlap=vision_report["road_overlap_percentage"],
+        status="approved" if vision_report["vision_passed"] else "rejected",
+        rejection_reason=None if vision_report["vision_passed"] else vision_report["vision_reason"]
+    )
+    db.add(new_report)
+    db.commit()
+    db.refresh(new_report)
+    
     if not vision_report["vision_passed"]:
-        return {"status": "rejected", "reason": vision_report["vision_reason"], "gcp_uri": bucket_uri}
+        return {"status": "rejected", "reason": vision_report["vision_reason"], "gcp_uri": bucket_uri, "report_id": new_report.id}
         
     # Valid Claim: The Telemetry is organic and the User Photo has proper metadata + YOLO boxes.
+    new_payout = models.Payout(user_id=current_user.id, amount=20.0, hazard_type="Verified Hazard", reason="Obstacle Verified by YOLO")
+    current_user.balance += 20.0
+    db.add(new_payout)
+    db.commit()
+    
     return {
         "status": "approved",
         "reason": "Claim automatically approved via Neurosymbolic validation.",
         "gcp_uri": bucket_uri,
+        "report_id": new_report.id,
         "yolo_analysis": {
             "classes": vision_report["yolo_detections"], 
             "confidence": vision_report["yolo_confidence"]
         }
+    }
+
+@app.post("/hazard/appeal/{report_id}")
+async def appeal_hazard_verification(
+    report_id: int, 
+    appeal_reason: str = Form(...),
+    current_user: models.User = Depends(auth.get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Appeals a rejected YOLO hazard verification by sending the stored image to Gemini Vision
+    for a premium AI assessment. 
+    """
+    report = db.query(models.HazardReport).filter(models.HazardReport.id == report_id, models.HazardReport.user_id == current_user.id).first()
+    
+    if not report:
+        raise HTTPException(status_code=404, detail="Hazard report not found or unauthorized.")
+        
+    if report.status == "approved":
+        return {"status": "already_approved", "message": "This report was already approved."}
+        
+    if report.status == "appealed":
+        return {"status": "already_appealed", "message": "This report was already appealed."}
+    
+    # Pass to Gemini
+    gemini_result = verify_hazard_with_gemini(report.image_uri, appeal_reason)
+    
+    # Save appeal record
+    new_appeal = models.HazardAppeal(
+        hazard_report_id=report.id,
+        user_id=current_user.id,
+        appeal_reason=appeal_reason,
+        gemini_analysis=gemini_result["gemini_reason"],
+        gemini_confidence=gemini_result["gemini_confidence"],
+        appeal_status="approved" if gemini_result["gemini_passed"] else "rejected"
+    )
+    db.add(new_appeal)
+    
+    # Update main report
+    report.status = "appealed_approved" if gemini_result["gemini_passed"] else "appealed_rejected"
+    
+    if gemini_result["gemini_passed"]:
+        new_payout = models.Payout(user_id=current_user.id, amount=20.0, hazard_type="Appealed Hazard", reason=f"Gemini verified: {gemini_result['gemini_reason']}")
+        current_user.balance += 20.0
+        db.add(new_payout)
+        
+    db.commit()
+    db.refresh(new_appeal)
+    
+    return {
+        "status": "success",
+        "gemini_decision": "approved" if gemini_result["gemini_passed"] else "rejected",
+        "reason": gemini_result["gemini_reason"],
+        "confidence": gemini_result["gemini_confidence"],
+        "payout_credited": gemini_result["gemini_passed"]
     }
 
 @app.get("/premium/calculate")

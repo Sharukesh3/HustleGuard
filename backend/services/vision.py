@@ -17,6 +17,7 @@ try:
     os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = cred_path
     import vertexai
     from vertexai.preview.vision_models import WatermarkVerificationModel, Image as VertexImage
+    from vertexai.generative_models import GenerativeModel, Part
     VERTEX_AI_AVAILABLE = True
 except Exception as e:
     VERTEX_AI_AVAILABLE = False
@@ -155,3 +156,61 @@ def analyze_hazard_image(image_bytes: bytes, filename: str) -> dict:
         "vision_passed": passed,
         "vision_reason": reason
     }
+
+def verify_hazard_with_gemini(gs_uri: str, appeal_reason: str) -> dict:
+    if not VERTEX_AI_AVAILABLE:
+        return {
+            "gemini_passed": False,
+            "gemini_reason": "Vertex AI SDK not available.",
+            "gemini_confidence": 0.0
+        }
+        
+    try:
+        from google.oauth2 import service_account
+        import json
+        
+        credentials = service_account.Credentials.from_service_account_file(cred_path)
+        vertexai.init(project=credentials.project_id, location="us-central1", credentials=credentials)
+        
+        # We use flash as it's the fastest and perfectly fine for vision tasks
+        model = GenerativeModel("gemini-1.5-flash")
+        
+        image_part = Part.from_uri(
+            uri=gs_uri,
+            mime_type="image/jpeg"
+        )
+        
+        prompt = f"""
+        You are a highly precise traffic safety AI. A driver reported a hazard on the road, but our lightweight model rejected it. 
+        The driver appealed the rejection with the following reason: "{appeal_reason}"
+        
+        Look at the image closely. Is there a genuine physical road hazard (like a pothole, fallen tree, collapsed wall, large debris) 
+        that is actively blocking or making the drivable road surface unsafe? 
+        Respond ONLY with a JSON object exactly like this, nothing else:
+        {{"passed": true/false, "confidence": 0.0-100.0, "reason": "short explanation of what you see"}}
+        """
+        
+        response = model.generate_content([image_part, prompt])
+        
+        # Parse the JSON response
+        text = response.text.strip()
+        if text.startswith("```json"):
+            text = text[7:-3].strip()
+        elif text.startswith("```"):
+            text = text[3:-3].strip()
+            
+        result = json.loads(text)
+        
+        return {
+            "gemini_passed": result.get("passed", False),
+            "gemini_reason": result.get("reason", "Failed to parse Gemini explanation."),
+            "gemini_confidence": result.get("confidence", 0.0)
+        }
+        
+    except Exception as e:
+        print(f"Gemini Appeal Error: {e}")
+        return {
+            "gemini_passed": False,
+            "gemini_reason": f"Gemini API failure: {str(e)}",
+            "gemini_confidence": 0.0
+        }
