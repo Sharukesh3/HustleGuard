@@ -109,5 +109,5 @@ uvicorn==0.44.0
 websockets==16.0
 yarl==1.23.0
 celery==5.4.0
-h3==3.7.6
+h3==4.4.2
 celery-redbeat==2.2.0
