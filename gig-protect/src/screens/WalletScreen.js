@@ -1,6 +1,6 @@
 import { getBaseUrl, getWsUrl } from '../config';
 import React, { useState, useRef, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Dimensions, Animated, Easing, Platform } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Dimensions, Animated, Easing, Platform, TextInput, Alert } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Shield, RefreshCw, ArrowUpRight, CheckCircle, Clock } from 'lucide-react-native';
@@ -46,16 +46,34 @@ export default function WalletScreen({ userProfile }) {
           setTransactions(formattedTx);
           
           // Populate claims list with only positive hazard payouts (not premium deductions or withdrawals)
-          const hazardClaims = formattedTx
-             .filter(tx => tx.type === 'credit' && tx.amount > 0)
-             .map(tx => ({
-                id: `HG-${tx.id}X`,
-                title: tx.title,
-                date: tx.date.split(',')[0], // Just date part
-                amount: tx.amount,
-                status: 'Approved'
-             }));
-          setClaims(hazardClaims);
+          if (data.hazard_reports) {
+            const parsedReports = data.hazard_reports.map(r => {
+              let titleParsed = 'Hazard Verification';
+              try { titleParsed = (JSON.parse(r.yolo_detections).join(', ') || 'Hazard Verification'); } catch(e){}
+              return {
+                id: `HR-${r.id}`,
+                rawId: r.id,
+                title: titleParsed,
+                date: new Date(r.timestamp).toLocaleDateString(),
+                amount: r.status === 'approved' || r.status === 'appealed_approved' ? 20 : 0,
+                status: r.status.replace('_', ' '),
+                rejection_reason: r.rejection_reason || 'AI Vision Rejected'
+              };
+            });
+            setClaims(parsedReports);
+          } else {
+             // Fallback
+             const hazardClaims = formattedTx
+               .filter(tx => tx.type === 'credit' && tx.amount > 0)
+               .map(tx => ({
+                  id: `HG-${tx.id}X`,
+                  title: tx.title,
+                  date: tx.date.split(',')[0],
+                  amount: tx.amount,
+                  status: 'approved'
+               }));
+             setClaims(hazardClaims);
+          }
         }
       })
       .catch(err => console.error("Error fetching wallet", err));
@@ -64,6 +82,39 @@ export default function WalletScreen({ userProfile }) {
   }, [activeTab, userProfile]);
 
   const [claims, setClaims] = useState([]);
+  const [appealingId, setAppealingId] = useState(null);
+  const [appealReason, setAppealReason] = useState("");
+  const [isSubmittingAppeal, setIsSubmittingAppeal] = useState(false);
+
+  const submitAppeal = async (reportId) => {
+      if(!appealReason.trim()) return Alert.alert("Error", "Please provide a reason to appeal.");
+      setIsSubmittingAppeal(true);
+      try {
+         const formData = new FormData();
+         formData.append('appeal_reason', appealReason);
+         
+         const res = await fetch(`${getBaseUrl()}/hazard/appeal/${reportId}`, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${userProfile.user.token}`
+            },
+            body: formData
+         });
+         const data = await res.json();
+         if(res.ok) {
+            Alert.alert("Appeal Completed", "Your claim was reviewed by Premium AI. " + ((data.payout_credited || data.gemini_passed) ? "It was APPROVED and credited." : "It was REJECTED again."));
+            setAppealingId(null);
+            setAppealReason("");
+         } else {
+            Alert.alert("Appeal Failed", data.detail || data.message || "Could not appeal.");
+            setAppealingId(null);
+         }
+      } catch(e) {
+         Alert.alert("Error", e.message);
+      } finally {
+         setIsSubmittingAppeal(false);
+      }
+  };
 
   const handleWithdraw = async () => {
     setIsWithdrawing(true);
@@ -76,31 +127,31 @@ export default function WalletScreen({ userProfile }) {
     try {
       if (userProfile && userProfile.user && userProfile.user.token) {
         
-        await fetch(`${getBaseUrl()}/wallet/transaction`, {
+        const response = await fetch(`${getBaseUrl()}/wallet/payout`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${userProfile.user.token}`
-          },
-          body: JSON.stringify({
-            amount: -balance,
-            hazard_type: 'withdrawal',
-            reason: 'Instant UPI Payout'
-          })
+          }
         });
+
+        const data = await response.json();
+        
+        if (data.status === 'success') {
+          setTransactions([
+            { id: data.payout_ref, title: 'Instant UPI Payout', type: 'debit', amount: balance, date: 'Just now', status: 'Success', reason: data.message },
+            ...transactions
+          ]);
+          setBalance(data.remaining_balance || 0);
+        } else {
+           console.error("Payout rejected:", data.detail);
+        }
       }
     } catch (err) {
       console.error("Instant withdraw failed", err);
-    }
-
-    setTimeout(() => {
-      setTransactions([
-        { id: Math.random(), title: 'Instant UPI Payout', type: 'debit', amount: balance, date: 'Just now', status: 'Success' },
-        ...transactions
-      ]);
-      setBalance(0);
+    } finally {
       setIsWithdrawing(false);
-    }, 2000);
+    }
   };
 
   const renderTransactions = () => (
@@ -131,14 +182,43 @@ export default function WalletScreen({ userProfile }) {
             <View style={styles.claimHeader}>
                <Text style={styles.claimId}>{claim.id}</Text>
                <View style={[styles.statusBadge, 
-                  claim.status === 'Rejected' ? { backgroundColor: 'hsla(9, 26%, 64%, 0.1)' } : { backgroundColor: 'hsla(220, 78%, 76%, 0.15)' }
+                  (claim.status === 'rejected' || claim.status === 'appealed_rejected') ? { backgroundColor: 'hsla(9, 26%, 64%, 0.1)' } : { backgroundColor: 'hsla(220, 78%, 76%, 0.15)' }
                ]}>
                   <Text style={[styles.statusText, 
-                     claim.status === 'Rejected' ? { color: colors.danger } : { color: colors.primary }
-                  ]}>{claim.status}</Text>
+                     (claim.status === 'rejected' || claim.status === 'appealed_rejected') ? { color: colors.danger } : { color: colors.primary }
+                  ]}>{claim.status.replace('_', ' ').toUpperCase()}</Text>
                </View>
             </View>
             <Text style={styles.claimTitle}>{claim.title}</Text>
+
+            {(claim.status === 'rejected' || claim.status === 'appealed_rejected') && (
+               <Text style={{color: colors.textMuted, marginBottom: 10, fontSize: 13}}>Reason: {claim.rejection_reason}</Text>
+            )}
+            
+            {(claim.status === 'rejected' && (!claim.rejection_reason || !claim.rejection_reason.toLowerCase().includes('fraud'))) && (
+               appealingId === claim.rawId ? (
+                 <View style={{marginTop: 10, marginBottom: 10}}>
+                   <TextInput
+                     style={{backgroundColor: colors.backgroundDark, color: colors.text, padding: 12, borderRadius: 8, borderColor: colors.borderMuted, borderWidth: 1, marginBottom: 10}}
+                     placeholder="Why was this an error?"
+                     placeholderTextColor={colors.textMuted}
+                     value={appealReason}
+                     onChangeText={setAppealReason}
+                   />
+                   <View style={{flexDirection: 'row', justifyContent: 'space-between'}}>
+                     <TouchableOpacity onPress={() => setAppealingId(null)} style={{padding: 10}}><Text style={{color: colors.textMuted, fontWeight: 'bold'}}>CANCEL</Text></TouchableOpacity>
+                     <TouchableOpacity style={{backgroundColor: colors.primary, padding: 10, borderRadius: 8}} onPress={() => submitAppeal(claim.rawId)} disabled={isSubmittingAppeal}>
+                       <Text style={{color: colors.backgroundDark, fontWeight: 'bold'}}>{isSubmittingAppeal ? "SUBMITTING..." : "SUBMIT APPEAL"}</Text>
+                     </TouchableOpacity>
+                   </View>
+                 </View>
+               ) : (
+                 <TouchableOpacity onPress={() => { setAppealingId(claim.rawId); setAppealReason(""); }} style={{marginBottom: 10}}>
+                   <Text style={{color: colors.warning, fontWeight: 'bold'}}>APPEAL WITH GEMINI VISION</Text>
+                 </TouchableOpacity>
+               )
+            )}
+
             <View style={styles.claimFooter}>
                <Text style={styles.claimDate}>{claim.date}</Text>
                <Text style={styles.claimAmount}>₹{claim.amount}</Text>

@@ -1,17 +1,19 @@
 import { getBaseUrl, getWsUrl } from '../config';
 import React, { useState, useRef } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Animated, Easing, Dimensions } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Animated, Easing, Dimensions, Alert, Image, Platform } from 'react-native';
 import { Camera, AlertTriangle, ScanLine, CheckCircle2, ShieldAlert } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import { useThemeColors } from '../theme/colors';
+import * as ImagePicker from 'expo-image-picker';
 
 const { width } = Dimensions.get('window');
 
-import { Platform } from 'react-native';
-
 export default function ReportHazardScreen({ userProfile }) {
   const [photoState, setPhotoState] = useState('idle'); // idle, scanning, result
+  const [visionData, setVisionData] = useState(null);
+  const [selectedImage, setSelectedImage] = useState(null);
+
   const colors = useThemeColors();
   const styles = getStyles(colors);
 
@@ -37,43 +39,70 @@ export default function ReportHazardScreen({ userProfile }) {
   };
 
   const simulatePhotoUpload = async () => {
-    setPhotoState('scanning');
-    startScanAnim();
-    
-    // Simulate API fetch delay
-    setTimeout(async () => {
-      // POST the manual hazard transaction!
+    let result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsEditing: false,
+      quality: 0.8,
+    });
+
+    if (!result.canceled && result.assets.length > 0) {
+      const uri = result.assets[0].uri;
+      setSelectedImage(uri);
+      setPhotoState('scanning');
+      startScanAnim();
+
       try {
-        if (userProfile && userProfile.user && userProfile.user.token) {
-          
-          await fetch(`${getBaseUrl()}/wallet/transaction`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${userProfile.user.token}`
-            },
-            body: JSON.stringify({
-              amount: 50,
-              hazard_type: 'Reported Hazard',
-              reason: 'Manual Photographic Hazard Report'
-            })
-          });
+        const formData = new FormData();
+        formData.append('speed', '20.0');
+        formData.append('gps_accuracy', '5.0');
+        formData.append('distance_covered', '150.0');
+        formData.append('ping_delta', '3.0');
+        formData.append('battery_level', '80.0');
+        formData.append('is_charging', 'false');
+        
+        let filename = uri.split('/').pop() || 'photo.jpg';
+        let match = /\.(\w+)$/.exec(filename);
+        let type = match ? `image/${match[1]}` : `image/jpeg`;
+
+        if (Platform.OS === 'web') {
+           const response = await fetch(uri);
+           const blob = await response.blob();
+           formData.append('file', blob, filename);
+        } else {
+           formData.append('file', JSON.parse(JSON.stringify({ uri, name: filename, type })));
+        }
+
+        const res = await fetch(`${getBaseUrl()}/fraud/verify-claim`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${userProfile.user.token}`
+          },
+          body: formData
+        });
+        
+        const data = await res.json();
+        if (res.ok) {
+           setVisionData(data);
+        } else {
+           Alert.alert("Upload Error", data.detail || "Server error occurred");
         }
       } catch (err) {
-        console.error('Hazard report payout failed:', err);
+        console.error("Upload error:", err);
+        Alert.alert("Upload Failed", err.message);
+      } finally {
+        setPhotoState('result');
+        scanLineAnim.stopAnimation();
+        pulseAnim.stopAnimation();
+        Animated.timing(fadeAnim, { toValue: 1, duration: 600, useNativeDriver: true }).start();
       }
-
-      setPhotoState('result');
-      scanLineAnim.stopAnimation();
-      pulseAnim.stopAnimation();
-      
-      Animated.timing(fadeAnim, { toValue: 1, duration: 600, useNativeDriver: true }).start();
-    }, 3000);
+    }
   };
 
   const reset = () => {
     fadeAnim.setValue(0);
     setPhotoState('idle');
+    setVisionData(null);
+    setSelectedImage(null);
   };
 
   return (
@@ -125,27 +154,45 @@ export default function ReportHazardScreen({ userProfile }) {
           </View>
         )}
 
-        {photoState === 'result' && (
+        {photoState === 'result' && visionData && (
           <Animated.ScrollView contentContainerStyle={styles.resultArea} style={{ opacity: fadeAnim }} showsVerticalScrollIndicator={false}>
-            <View style={styles.successIconBox}>
-              <CheckCircle2 color={colors.success} size={50} strokeWidth={2.5} />
-            </View>
-            <Text style={styles.resultTitle}>Hazard Authenticated</Text>
-            
-            <View style={styles.terminalBox}>
-               <Text style={styles.terminalHeader}>VISION LOG OUTPUT</Text>
-               <View style={styles.terminalLine}><Text style={styles.termLabel}>Entity Recognized:</Text><Text style={styles.termValue}>Fallen Tree / Debris</Text></View>
-               <View style={styles.terminalLine}><Text style={styles.termLabel}>Confidence Score:</Text><Text style={styles.termHighlight}>94.2%</Text></View>
-               <View style={styles.terminalLine}><Text style={styles.termLabel}>GPS Coordinates:</Text><Text style={styles.termValue}>Match Active Route</Text></View>
-               <View style={styles.terminalLine}><Text style={styles.termLabel}>Unique Image Hash:</Text><Text style={styles.termSuccess}>PASSED (No Dupe)</Text></View>
-            </View>
+            {visionData.status === 'rejected' ? (
+              <>
+                <View style={[styles.successIconBox, { backgroundColor: 'hsla(0, 100%, 65%, 0.1)' }]}>
+                  <ShieldAlert color={colors.danger} size={50} strokeWidth={2.5} />
+                </View>
+                <Text style={[styles.resultTitle, { color: colors.danger }]}>Claim Rejected</Text>
+                
+                <View style={styles.terminalBox}>
+                   <Text style={styles.terminalHeader}>VISION LOG OUTPUT</Text>
+                   <View style={styles.terminalLine}><Text style={styles.termLabel}>Status:</Text><Text style={{...styles.termValue, color: colors.danger}}>{visionData.status.toUpperCase()}</Text></View>
+                   <View style={styles.terminalLine}><Text style={styles.termLabel}>Reason:</Text><Text style={styles.termValue}>{visionData.reason || "No hazard detected"}</Text></View>
+                   <View style={styles.terminalLine}><Text style={styles.termLabel}>Action:</Text><Text style={styles.termValue}>No payout dispersed</Text></View>
+                </View>
+              </>
+            ) : (
+              <>
+                <View style={styles.successIconBox}>
+                  <CheckCircle2 color={colors.success} size={50} strokeWidth={2.5} />
+                </View>
+                <Text style={styles.resultTitle}>Hazard Authenticated</Text>
+                
+                <View style={styles.terminalBox}>
+                   <Text style={styles.terminalHeader}>VISION LOG OUTPUT</Text>
+                   <View style={styles.terminalLine}><Text style={styles.termLabel}>Entities Recognized:</Text><Text style={styles.termValue}>{visionData?.yolo_analysis?.classes?.length ? visionData.yolo_analysis.classes.join(', ') : 'Verified'}</Text></View>
+                   <View style={styles.terminalLine}><Text style={styles.termLabel}>Confidence Score:</Text><Text style={styles.termHighlight}>{visionData?.yolo_analysis?.confidence ? (visionData.yolo_analysis.confidence * 100).toFixed(1) + '%' : 'N/A'}</Text></View>
+                   <View style={styles.terminalLine}><Text style={styles.termLabel}>GPS Coordinates:</Text><Text style={styles.termValue}>Match Active Route</Text></View>
+                   <View style={styles.terminalLine}><Text style={styles.termLabel}>Payout Dispersed:</Text><Text style={styles.termSuccess}>Yes (+20.0)</Text></View>
+                </View>
 
-            <View style={styles.claimBox}>
-              <View style={styles.claimGlow} />
-              <AlertTriangle color={colors.warning} size={32} style={{ marginBottom: 15 }} />
-              <Text style={styles.claimTitle}>Route Diversion Approved</Text>
-              <Text style={styles.claimDesc}>A ₹50 micro-payout has been securely deposited to your Razorpay Wallet to cover the unavoidable detour.</Text>
-            </View>
+                <View style={styles.claimBox}>
+                  <View style={styles.claimGlow} />
+                  <AlertTriangle color={colors.warning} size={32} style={{ marginBottom: 15 }} />
+                  <Text style={styles.claimTitle}>Route Diversion Approved</Text>
+                  <Text style={styles.claimDesc}>A ₹20 micro-payout has been securely deposited to your Wallet to cover the unavoidable detour.</Text>
+                </View>
+              </>
+            )}
 
             <TouchableOpacity style={styles.btn} onPress={reset} activeOpacity={0.8}>
                <Text style={styles.btnText}>REPORT ANOTHER HAZARD</Text>

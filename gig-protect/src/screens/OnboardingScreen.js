@@ -8,8 +8,16 @@ import { useThemeColors } from '../theme/colors';
 
 const { width, height } = Dimensions.get('window');
 
-export default function OnboardingScreen({ onComplete }) {
+export default function OnboardingScreen({ onComplete, onAdminRequest }) {
   const [step, setStep] = useState(1);
+  const [adminTapCount, setAdminTapCount] = useState(0);
+
+  const handleAdminTap = () => {
+    setAdminTapCount(prev => prev + 1);
+    if (adminTapCount >= 4) {
+      if (onAdminRequest) onAdminRequest();
+    }
+  };
   
   // Auth state
   const [mobileNumber, setMobileNumber] = useState('');
@@ -341,10 +349,10 @@ export default function OnboardingScreen({ onComplete }) {
       <View style={styles.contentWrapper}>
 
       <View style={styles.header}>
-        <View style={styles.logoContainer}>
+        <TouchableOpacity activeOpacity={0.8} onPress={handleAdminTap} style={styles.logoContainer}>
           <ShieldAlert color={colors.primary} size={36} strokeWidth={2.5} />
           <Text style={styles.logoText}>HustleGuard</Text>
-        </View>
+        </TouchableOpacity>
         <Text style={styles.subtitle}>Intelligent Q-Commerce Income Protection</Text>
         
         {/* Progress Dots */}
@@ -585,20 +593,40 @@ export default function OnboardingScreen({ onComplete }) {
                       const alreadyPaid = data.history?.some(tx => tx.hazard_type === 'premium');
                       
                       if (!alreadyPaid) {
-                        // Deduct initial premium if they haven't paid yet
+                        // Prompt user to pay the premium via Stripe Checkout simulator
                         const premiumAmount = mockUserData?.premium || 25;
-                        await fetch(`${getBaseUrl()}/wallet/transaction`, {
-                          method: 'POST',
-                          headers: {
-                            'Content-Type': 'application/json',
-                            'Authorization': `Bearer ${mockUserData.token}`
-                          },
-                          body: JSON.stringify({
-                            amount: -premiumAmount,
-                            hazard_type: 'premium',
-                            reason: 'Weekly Premium Deduction'
-                          })
-                        });
+                        Alert.alert(
+                          "Stripe Sandbox Checkout",
+                          `Your Dynamic Weekly Premium is ₹${premiumAmount}.\n\nDo you want to process this payment securely to activate your parametric insurance cycle?`,
+                          [
+                            { text: "Cancel", style: "cancel" },
+                            { 
+                              text: `Pay ₹${premiumAmount}`, 
+                              onPress: async () => {
+                                try {
+                                  await fetch(`${getBaseUrl()}/wallet/transaction`, {
+                                    method: 'POST',
+                                    headers: {
+                                      'Content-Type': 'application/json',
+                                      'Authorization': `Bearer ${mockUserData.token}`
+                                    },
+                                    body: JSON.stringify({
+                                      amount: -premiumAmount,
+                                      hazard_type: 'premium',
+                                      reason: 'Weekly Premium Deduction'
+                                    })
+                                  });
+                                  Alert.alert("Payment Success", "Stripe payment simulated successfully! Your policy is now active.");
+                                  onComplete({ platform, zone, premium: premiumAmount, user: mockUserData, locationObj, profileInsight: mockUserData?.profileInsight });
+                                } catch (e) {
+                                  console.error(e);
+                                  Alert.alert("Error", "Payment failed");
+                                }
+                              }
+                            }
+                          ]
+                        );
+                        return; // Prevent navigating away immediately
                       } else {
                         console.log("User already has an active premium subscription. Skipping deduction.");
                       }
