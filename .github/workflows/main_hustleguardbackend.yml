@@ -41,6 +41,7 @@ jobs:
           path: |
             backend/
             !backend/antenv/
+            !backend/.venv/
             !backend/**/*.pt
             !backend/**/*.pth
             !backend/**/*.pkl
