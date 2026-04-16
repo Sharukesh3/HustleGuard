@@ -5,7 +5,7 @@ WORKDIR /app
 # Install system dependencies for YOLO (OpenCV)
 RUN apt-get update && apt-get install -y libgl1-mesa-glx libglib2.0-0 && rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt .
+COPY requirements_ml.txt .
 RUN pip install --no-cache-dir -r requirements_ml.txt
 
 COPY . .
