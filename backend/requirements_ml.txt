@@ -1,0 +1,14 @@
+fastapi
+uvicorn
+python-multipart
+torch
+numpy
+pandas
+xgboost
+shap
+Pillow
+piexif
+shapely
+ultralytics
+opencv-python-headless
+google-cloud-aiplatform

@@ -1,0 +1,37 @@
+swagger: '2.0'
+info:
+  title: HustleGuard ML API
+  description: API Gateway routing to HustleGuard ML backend on Cloud Run.
+  version: 1.0.0
+schemes:
+  - https
+produces:
+  - application/json
+paths:
+  /api/vision/analyze:
+    post:
+      summary: Analyze Hazard Image using YOLO
+      operationId: analyze_image
+      x-google-backend:
+        address: https://YOUR-CLOUD-RUN-URL.run.app/api/vision/analyze
+      responses:
+        '200':
+          description: A successful response
+  /api/fraud/telemetry:
+    post:
+      summary: Check for GPS Spoofing
+      operationId: check_telemetry
+      x-google-backend:
+        address: https://YOUR-CLOUD-RUN-URL.run.app/api/fraud/telemetry
+      responses:
+        '200':
+          description: A successful response
+  /api/premium/calculate:
+    post:
+      summary: Calculate Dynamic Premium
+      operationId: calculate_premium
+      x-google-backend:
+        address: https://YOUR-CLOUD-RUN-URL.run.app/api/premium/calculate
+      responses:
+        '200':
+          description: A successful response
