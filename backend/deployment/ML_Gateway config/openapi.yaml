@@ -13,7 +13,7 @@ paths:
       summary: Analyze Hazard Image using YOLO
       operationId: analyze_image
       x-google-backend:
-        address: https://YOUR-CLOUD-RUN-URL.run.app/api/vision/analyze
+        address: https://hustleguard-ml-service-171911657222.asia-south1.run.app/api/vision/analyze
       responses:
         '200':
           description: A successful response
@@ -22,7 +22,7 @@ paths:
       summary: Check for GPS Spoofing
       operationId: check_telemetry
       x-google-backend:
-        address: https://YOUR-CLOUD-RUN-URL.run.app/api/fraud/telemetry
+        address: https://hustleguard-ml-service-171911657222.asia-south1.run.app/api/fraud/telemetry
       responses:
         '200':
           description: A successful response
@@ -31,7 +31,7 @@ paths:
       summary: Calculate Dynamic Premium
       operationId: calculate_premium
       x-google-backend:
-        address: https://YOUR-CLOUD-RUN-URL.run.app/api/premium/calculate
+        address: https://hustleguard-ml-service-171911657222.asia-south1.run.app/api/premium/calculate
       responses:
         '200':
           description: A successful response

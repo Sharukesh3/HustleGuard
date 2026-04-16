@@ -1,4 +1,7 @@
-﻿from ml.premium_model import calculate_neural_risk_score
+﻿import requests
+import os
+
+GATEWAY_URL = os.getenv("GCP_API_GATEWAY_URL", "https://hustleguard-gateway-26z3rfnq.an.gateway.dev")
 
 def calculate_premium_multiplier(weather_data: dict, traffic_data: dict, social_score: float, historical_score: float) -> dict:
     '''
@@ -27,8 +30,16 @@ def calculate_premium_multiplier(weather_data: dict, traffic_data: dict, social_
         'coverage_tier': 'standard'
     }
     
-    # We now get a dictionary containing the baseline prediction and SHAP explanation
-    ml_output = calculate_neural_risk_score(job_data_mock)
+    # We now get a dictionary containing the baseline prediction and SHAP explanation via GCP Microservice
+    try:
+        response = requests.post(f"{GATEWAY_URL}/api/premium/calculate", json=job_data_mock, timeout=60)
+        ml_output = response.json()
+    except Exception as e:
+        print(f"Premium Gateway error: {e}")
+        ml_output = {
+            'neural_base_premium': 150.0, 
+            'shap_factors': ["Warning: Remote AI Model Unreachable - Used baseline."]
+        }
     
     # The ML model outputs a premium dollar amount (e.g. $120 to $350). 
     # We normalize to a multiplier base (e.g. 1.0 to 3.0) for the symbolic caps

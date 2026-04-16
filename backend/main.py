@@ -17,10 +17,12 @@ import models
 import auth
 
 from risk_model import calculate_premium_multiplier
-from ml.fraud_model import is_fraudulent_telemetry
 from services.external_apis import fetch_weather_data, fetch_traffic_data, analyze_unstructured_risks, analyze_historical_seasonal_risks, generate_overall_pricing_reason
-from services.vision import analyze_hazard_image, verify_hazard_with_gemini
+from services.vision import verify_hazard_with_gemini
 from services.gcp_storage import upload_to_gcp
+import requests
+
+GATEWAY_URL = os.getenv("GCP_API_GATEWAY_URL", "https://hustleguard-gateway-26z3rfnq.an.gateway.dev")
 from services.redis_client import redis_cache
 from services.payment import process_instant_payout as stripe_process_payout
 from h3_utils import get_h3_index
@@ -181,10 +183,17 @@ async def verify_claim(
     NEUROSYMBOLIC PIPELINE: Runs telemetry through the PyTorch Autoencoder 
     and Image upload through YOLO (Neural) + EXIF timestamp mapping (Symbolic)
     """
-    # 1. Evaluate device telemetry for GPS spoofing anomalies
-    is_spoofed, telemetry_reason = is_fraudulent_telemetry(
-        speed, gps_accuracy, distance_covered, ping_delta, battery_level, is_charging
-    )
+    # 1. Evaluate device telemetry for GPS spoofing anomalies via GCP Microservice
+    try:
+        tel_response = requests.post(f"{GATEWAY_URL}/api/fraud/telemetry", data={
+            "speed": speed, "gps_accuracy": gps_accuracy, "distance": distance_covered,
+            "ping_delta": ping_delta, "battery_level": battery_level, "is_charging": is_charging
+        }, timeout=60)
+        tel_data = tel_response.json()
+        is_spoofed, telemetry_reason = tel_data.get("is_fraud", False), tel_data.get("reason", "Telemetry verified.")
+    except Exception as e:
+        print(f"Gateway error: {e}")
+        is_spoofed, telemetry_reason = False, "Gateway unreachable, bypassing fraud check."
     
     if is_spoofed:
         # Save rejected spoofing report to DB so it appears in Wallet history
@@ -208,8 +217,17 @@ async def verify_claim(
     # 3. Real GCP Storage Upload
     bucket_uri = upload_to_gcp(file_bytes, file.filename)
     
-    # 4. Neural Vision Service (YOLO + EXIF validation)
-    vision_report = analyze_hazard_image(file_bytes, file.filename)
+    # 4. Neural Vision Service (YOLO + EXIF validation) via GCP Microservice
+    try:
+        files = {"file": (file.filename, file_bytes, file.content_type)}
+        vis_response = requests.post(f"{GATEWAY_URL}/api/vision/analyze", files=files, timeout=60)
+        vision_report = vis_response.json()
+    except Exception as e:
+        print(f"Gateway vision error: {e}")
+        vision_report = {
+            "yolo_detections": [], "yolo_confidence": 0.0, "road_overlap_percentage": 0.0,
+            "vision_passed": False, "vision_reason": f"Gateway error: {e}"
+        }
     
     # 5. Store Hazard Report to database 
     new_report = models.HazardReport(
