@@ -1,10 +1,12 @@
-import React, { useState } from 'react';
-import { View, StyleSheet, StatusBar } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, StyleSheet, StatusBar, Platform } from 'react-native';
 import OnboardingScreen from './src/screens/OnboardingScreen';
 import DashboardScreen from './src/screens/DashboardScreen';
 import PolicyScreen from './src/screens/PolicyScreen';
 import ReportHazardScreen from './src/screens/ReportHazardScreen';
 import WalletScreen from './src/screens/WalletScreen';
+import AdminDashboardScreen from './src/screens/AdminDashboardScreen';
+import AdminLoginScreen from './src/screens/AdminLoginScreen';
 import TabBar from './src/components/TabBar';
 import { ThemeProvider, useThemeColors } from './src/theme/ThemeContext';
 
@@ -12,6 +14,17 @@ function MainApp() {
   const [isOnboarded, setIsOnboarded] = useState(false);
   const [userProfile, setUserProfile] = useState(null);
   const [activeTab, setActiveTab] = useState('home');
+  
+  // Admin state
+  const [isAdminMode, setIsAdminMode] = useState(false);
+  const [isAdminLoggedIn, setIsAdminLoggedIn] = useState(false);
+
+  useEffect(() => {
+    if (Platform.OS === 'web' && window.location.pathname === '/admin') {
+      setIsAdminMode(true);
+    }
+  }, []);
+
   const colors = useThemeColors();
   const styles = getStyles(colors);
 
@@ -21,6 +34,14 @@ function MainApp() {
   };
 
   const renderScreen = () => {
+    if (isAdminMode) {
+      return isAdminLoggedIn ? (
+        <AdminDashboardScreen />
+      ) : (
+        <AdminLoginScreen onLoginSuccess={() => setIsAdminLoggedIn(true)} />
+      );
+    }
+
     switch(activeTab) {
       case 'home':
         return <DashboardScreen userProfile={userProfile} />;
@@ -41,8 +62,17 @@ function MainApp() {
         barStyle={colors.isDark ? "light-content" : "dark-content"}
         backgroundColor={colors.background}
       />
-      {!isOnboarded ? (
-        <OnboardingScreen onComplete={handleCompleteOnboarding} />
+      
+      {isAdminMode ? (
+         <View style={styles.appContainer}>
+            {isAdminLoggedIn ? (
+              <AdminDashboardScreen />
+            ) : (
+              <AdminLoginScreen onLoginSuccess={() => setIsAdminLoggedIn(true)} />
+            )}
+         </View>
+      ) : !isOnboarded ? (
+        <OnboardingScreen onComplete={handleCompleteOnboarding} onAdminRequest={() => setIsAdminMode(true)} />
       ) : (
         <View style={styles.appContainer}>
            {renderScreen()}
