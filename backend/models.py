@@ -56,3 +56,31 @@ class HazardAppeal(Base):
 
     report = relationship("HazardReport")
     user = relationship("User")
+
+
+class ActiveHazard(Base):
+    __tablename__ = "active_hazards"
+
+    id = Column(Integer, primary_key=True, index=True)
+    hazard_type = Column(String, index=True)
+    description = Column(String)
+    latitude = Column(Float)
+    longitude = Column(Float)
+    radius_km = Column(Float, default=5.0)
+    payout_amount = Column(Float, default=50.0)
+    is_active = Column(Integer, default=1)  # 1 for active, 0 for resolved
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+class PredictionCache(Base):
+    __tablename__ = "prediction_cache"
+
+    id = Column(Integer, primary_key=True, index=True)
+    city_name = Column(String, index=True)
+    latitude = Column(Float)
+    longitude = Column(Float)
+    risk_category = Column(String, index=True)  # e.g., weather, traffic, strike, lockdown, grid
+    timeline_week = Column(Integer, index=True) # 0, 1, 2, 3, 4
+    risk_score = Column(Float)
+    confidence = Column(Float)
+    updated_at = Column(DateTime, default=datetime.utcnow)
+
