@@ -24,6 +24,8 @@ class RedisClient:
                     port=redis_port, 
                     password=redis_password,
                     ssl=redis_ssl,
+                    socket_connect_timeout=3,
+                    socket_timeout=3,
                     db=0,
                     decode_responses=True
                 )
