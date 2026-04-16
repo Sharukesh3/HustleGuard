@@ -24,12 +24,7 @@ except Exception as e:
 
 CUSTOM_YOLO_WEIGHTS = os.path.join(os.path.dirname(__file__), "best.pt")
 
-HAZARD_CLASSES = [
-    "pothole", "Pothole", "Wall", "stone", "Manhole", "Collapsed-Wall", 
-    "Cracked pavement", "Drain Hole", "Fallen Electrical Pole", 
-    "Fallen Signage", "Fallen Tree", "Fire Source", "Garbage Pillups", 
-    "Loose Sewer", "Open-Manhole", "Sewer"
-]
+HAZARD_CLASSES = [ "Drain Hole", "Fallen Tree", "Fire Source", "Garbage Pillups", "Open-Manhole", "pothole", "Sewer"]
 
 def check_gemini_synthid(image_bytes: bytes) -> bool:
     if not VERTEX_AI_AVAILABLE: return False
@@ -96,6 +91,8 @@ def analyze_hazard_image(image_bytes: bytes, filename: str) -> dict:
     if is_ai:
         return {
             "yolo_detections": [],
+            "yolo_confidence": 0.0,
+            "road_overlap_percentage": 0.0,
             "vision_passed": False,
             "vision_reason": f"Fraud attempt blocked: {ai_reason}."
         }
@@ -172,8 +169,8 @@ def verify_hazard_with_gemini(gs_uri: str, appeal_reason: str) -> dict:
         credentials = service_account.Credentials.from_service_account_file(cred_path)
         vertexai.init(project=credentials.project_id, location="us-central1", credentials=credentials)
         
-        # We use flash as it's the fastest and perfectly fine for vision tasks
-        model = GenerativeModel("gemini-1.5-flash")
+        # We use gemini-2.5-flash as per the March 2026 GCP release notes
+        model = GenerativeModel("gemini-2.5-flash")
         
         image_part = Part.from_uri(
             uri=gs_uri,
