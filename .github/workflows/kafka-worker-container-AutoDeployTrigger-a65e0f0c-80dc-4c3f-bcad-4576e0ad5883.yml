@@ -40,6 +40,7 @@ jobs:
           registryUsername: ${{ secrets.KAFKAWORKERCONTAINER_REGISTRY_USERNAME }}
           registryPassword: ${{ secrets.KAFKAWORKERCONTAINER_REGISTRY_PASSWORD }}
           containerAppName: kafka-worker-container
+          containerName: kafka-worker-container
           resourceGroup: HustleGuard
           imageToBuild: hustleguardregistry.azurecr.io/kafka-worker-container:${{ github.sha }}
 
