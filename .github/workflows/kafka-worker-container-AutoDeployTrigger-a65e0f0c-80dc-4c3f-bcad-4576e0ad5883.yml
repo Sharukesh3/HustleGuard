@@ -34,16 +34,13 @@ jobs:
       - name: Build and push container image to registry
         uses: azure/container-apps-deploy-action@v2
         with:
-          appSourcePath: ${{ github.workspace }}backend/Dockerfile.worker
-          _dockerfilePathKey_: _dockerfilePath_
-          _targetLabelKey_: _targetLabel_
+          appSourcePath: ${{ github.workspace }}/backend
+          dockerfilePath: Dockerfile.worker
           registryUrl: hustleguardregistry.azurecr.io
           registryUsername: ${{ secrets.KAFKAWORKERCONTAINER_REGISTRY_USERNAME }}
           registryPassword: ${{ secrets.KAFKAWORKERCONTAINER_REGISTRY_PASSWORD }}
           containerAppName: kafka-worker-container
           resourceGroup: HustleGuard
           imageToBuild: hustleguardregistry.azurecr.io/kafka-worker-container:${{ github.sha }}
-          _buildArgumentsKey_: |
-            _buildArgumentsValues_
 
 
