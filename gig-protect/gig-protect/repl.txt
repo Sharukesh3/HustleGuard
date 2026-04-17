@@ -1,0 +1,42 @@
+﻿                      if (!alreadyPaid) {
+                        const premiumAmount = mockUserData?.premium || 25;
+                        const msg = Your Dynamic Weekly Premium is ₹.\n\nDo you want to process this payment securely to activate your parametric insurance cycle?;
+
+                        const proceed = Platform.OS === 'web' 
+                          ? window.confirm(msg)
+                          : await new Promise(resolve => {
+                              Alert.alert(
+                                "Stripe Sandbox Checkout",
+                                msg,
+                                [
+                                  { text: "Cancel", onPress: () => resolve(false), style: "cancel" },
+                                  { text: Pay ₹, onPress: () => resolve(true) }
+                                ]
+                              );
+                            });
+
+                        if (proceed) {
+                          try {
+                            await fetch(${getBaseUrl()}/wallet/transaction, {
+                              method: 'POST',
+                              headers: {
+                                'Content-Type': 'application/json',
+                                'Authorization': Bearer 
+                              },
+                              body: JSON.stringify({
+                                amount: -premiumAmount,
+                                hazard_type: 'premium',
+                                reason: 'Weekly Premium Deduction'
+                              })
+                            });
+                            
+                            if (Platform.OS === 'web') window.alert("Stripe payment simulated successfully! Your policy is now active.");
+                            else Alert.alert("Payment Success", "Stripe payment simulated successfully! Your policy is now active.");
+                            
+                            onComplete({ platform, zone, premium: premiumAmount, user: mockUserData, locationObj, profileInsight: mockUserData?.profileInsight });
+                          } catch (e) {
+                            console.error(e);
+                            if (Platform.OS === 'web') window.alert("Payment failed");
+                            else Alert.alert("Error", "Payment failed");
+                          }
+                        }

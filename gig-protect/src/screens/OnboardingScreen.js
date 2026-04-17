@@ -595,37 +595,55 @@ export default function OnboardingScreen({ onComplete, onAdminRequest }) {
                       if (!alreadyPaid) {
                         // Prompt user to pay the premium via Stripe Checkout simulator
                         const premiumAmount = mockUserData?.premium || 25;
-                        Alert.alert(
-                          "Stripe Sandbox Checkout",
-                          `Your Dynamic Weekly Premium is ₹${premiumAmount}.\n\nDo you want to process this payment securely to activate your parametric insurance cycle?`,
-                          [
-                            { text: "Cancel", style: "cancel" },
-                            { 
-                              text: `Pay ₹${premiumAmount}`, 
-                              onPress: async () => {
-                                try {
-                                  await fetch(`${getBaseUrl()}/wallet/transaction`, {
-                                    method: 'POST',
-                                    headers: {
-                                      'Content-Type': 'application/json',
-                                      'Authorization': `Bearer ${mockUserData.token}`
-                                    },
-                                    body: JSON.stringify({
-                                      amount: -premiumAmount,
-                                      hazard_type: 'premium',
-                                      reason: 'Weekly Premium Deduction'
-                                    })
-                                  });
+                        
+                        const msg = `Your Dynamic Weekly Premium is ₹${premiumAmount}.\n\nDo you want to process this payment securely to activate your parametric insurance cycle?`;
+
+                        // Execute async confirmation safely across both Mobile and Web platforms
+                        const proceed = Platform.OS === 'web' 
+                          ? window.confirm(msg)
+                          : await new Promise((resolve) => {
+                              Alert.alert(
+                                "Stripe Sandbox Checkout",
+                                msg,
+                                [
+                                  { text: "Cancel", onPress: () => resolve(false), style: "cancel" },
+                                  { text: `Pay ₹${premiumAmount}`, onPress: () => resolve(true) }
+                                ]
+                              );
+                            });
+
+                        if (proceed) {
+                          try {
+                            const res = await fetch(`${getBaseUrl()}/wallet/transaction`, {
+                              method: 'POST',
+                              headers: {
+                                'Content-Type': 'application/json',
+                                'Authorization': `Bearer ${mockUserData.token}`
+                              },
+                              body: JSON.stringify({
+                                amount: -premiumAmount,
+                                hazard_type: 'premium',
+                                reason: 'Weekly Premium Deduction'
+                              })
+                            });
+                            
+                            if (res.ok) {
+                                if (Platform.OS === 'web') {
+                                  window.alert("Stripe payment simulated successfully! Your policy is now active.");
+                                } else {
                                   Alert.alert("Payment Success", "Stripe payment simulated successfully! Your policy is now active.");
-                                  onComplete({ platform, zone, premium: premiumAmount, user: mockUserData, locationObj, profileInsight: mockUserData?.profileInsight });
-                                } catch (e) {
-                                  console.error(e);
-                                  Alert.alert("Error", "Payment failed");
                                 }
-                              }
+                                onComplete({ platform, zone, premium: premiumAmount, user: mockUserData, locationObj, profileInsight: mockUserData?.profileInsight });
+                            } else {
+                                throw new Error("Transaction declined");
                             }
-                          ]
-                        );
+                          } catch (e) {
+                            console.error(e);
+                            if (Platform.OS === 'web') window.alert("Payment failed");
+                            else Alert.alert("Error", "Payment failed");
+                          }
+                        }
+                        
                         return; // Prevent navigating away immediately
                       } else {
                         console.log("User already has an active premium subscription. Skipping deduction.");
