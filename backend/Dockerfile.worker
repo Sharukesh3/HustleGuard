@@ -1,0 +1,13 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Install dependencies
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy the backend code
+COPY . .
+
+# Run both the Producer (Radar) and Consumer (Payment) in the background concurrently
+CMD python kafka_producer_scheduler.py & python kafka_payment_consumer.py && wait
