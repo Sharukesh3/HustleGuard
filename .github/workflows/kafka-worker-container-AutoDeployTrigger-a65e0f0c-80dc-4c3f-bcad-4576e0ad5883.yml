@@ -31,17 +31,19 @@ jobs:
           tenant-id: ${{ secrets.KAFKAWORKERCONTAINER_AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.KAFKAWORKERCONTAINER_AZURE_SUBSCRIPTION_ID }}
 
-      - name: Build and push container image to registry
-        uses: azure/container-apps-deploy-action@v2
+      - name: Build and Push Docker Image
+        run: |
+          docker login hustleguardregistry.azurecr.io -u ${{ secrets.KAFKAWORKERCONTAINER_REGISTRY_USERNAME }} -p ${{ secrets.KAFKAWORKERCONTAINER_REGISTRY_PASSWORD }}
+          docker build -t hustleguardregistry.azurecr.io/kafka-worker-container:${{ github.sha }} -f ${{ github.workspace }}/backend/Dockerfile.worker ${{ github.workspace }}/backend
+          docker push hustleguardregistry.azurecr.io/kafka-worker-container:${{ github.sha }}
+
+      - name: Update Azure Container App
+        uses: azure/cli@v2
         with:
-          appSourcePath: ${{ github.workspace }}/backend
-          dockerfilePath: Dockerfile.worker
-          registryUrl: hustleguardregistry.azurecr.io
-          registryUsername: ${{ secrets.KAFKAWORKERCONTAINER_REGISTRY_USERNAME }}
-          registryPassword: ${{ secrets.KAFKAWORKERCONTAINER_REGISTRY_PASSWORD }}
-          containerAppName: kafka-worker-container
-          containerName: kafka-worker-container
-          resourceGroup: HustleGuard
-          imageToBuild: hustleguardregistry.azurecr.io/kafka-worker-container:${{ github.sha }}
+          azcliversion: latest
+          inlineScript: |
+            az config set extension.use_dynamic_install=yes_without_prompt
+            az containerapp registry set -n kafka-worker-container -g HustleGuard --server hustleguardregistry.azurecr.io --username ${{ secrets.KAFKAWORKERCONTAINER_REGISTRY_USERNAME }} --password ${{ secrets.KAFKAWORKERCONTAINER_REGISTRY_PASSWORD }}
+            az containerapp update -n kafka-worker-container -g HustleGuard --container-name kafka-worker-container --image hustleguardregistry.azurecr.io/kafka-worker-container:${{ github.sha }}
 
 
