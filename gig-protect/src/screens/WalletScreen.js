@@ -87,7 +87,12 @@ export default function WalletScreen({ userProfile }) {
   const [isSubmittingAppeal, setIsSubmittingAppeal] = useState(false);
 
   const submitAppeal = async (reportId) => {
-      if(!appealReason.trim()) return Alert.alert("Error", "Please provide a reason to appeal.");
+      const showAlert = (title, message) => {
+         if (Platform.OS === 'web') window.alert(`${title}: ${message}`);
+         else Alert.alert(title, message);
+      };
+
+      if(!appealReason.trim()) return showAlert("Error", "Please provide a reason to appeal.");
       setIsSubmittingAppeal(true);
       try {
          const formData = new FormData();
@@ -102,15 +107,27 @@ export default function WalletScreen({ userProfile }) {
          });
          const data = await res.json();
          if(res.ok) {
-            Alert.alert("Appeal Completed", "Your claim was reviewed by Premium AI. " + ((data.payout_credited || data.gemini_passed) ? "It was APPROVED and credited." : "It was REJECTED again."));
+            showAlert("Appeal Completed", "Your claim was reviewed by Premium AI. " + ((data.payout_credited || data.gemini_passed) ? "It was APPROVED and credited." : "It was REJECTED again."));
+            
+            // Update the local claims state so the button disappears based on new status
+            setClaims(prev => prev.map(c => {
+               if (c.rawId === reportId) {
+                  return {
+                     ...c,
+                     status: (data.payout_credited || data.gemini_passed) ? 'approved' : 'appealed_rejected'
+                  };
+               }
+               return c;
+            }));
+
             setAppealingId(null);
             setAppealReason("");
          } else {
-            Alert.alert("Appeal Failed", data.detail || data.message || "Could not appeal.");
+            showAlert("Appeal Failed", data.detail || data.message || "Could not appeal.");
             setAppealingId(null);
          }
       } catch(e) {
-         Alert.alert("Error", e.message);
+         showAlert("Error", e.message);
       } finally {
          setIsSubmittingAppeal(false);
       }
@@ -182,16 +199,16 @@ export default function WalletScreen({ userProfile }) {
             <View style={styles.claimHeader}>
                <Text style={styles.claimId}>{claim.id}</Text>
                <View style={[styles.statusBadge, 
-                  (claim.status === 'rejected' || claim.status === 'appealed_rejected') ? { backgroundColor: 'hsla(9, 26%, 64%, 0.1)' } : { backgroundColor: 'hsla(220, 78%, 76%, 0.15)' }
+                  (claim.status === 'rejected' || claim.status === 'appealed_rejected' || claim.status === 'appealed rejected') ? { backgroundColor: 'hsla(9, 26%, 64%, 0.1)' } : { backgroundColor: 'hsla(220, 78%, 76%, 0.15)' }
                ]}>
                   <Text style={[styles.statusText, 
-                     (claim.status === 'rejected' || claim.status === 'appealed_rejected') ? { color: colors.danger } : { color: colors.primary }
+                     (claim.status === 'rejected' || claim.status === 'appealed_rejected' || claim.status === 'appealed rejected') ? { color: colors.danger } : { color: colors.primary }
                   ]}>{claim.status.replace('_', ' ').toUpperCase()}</Text>
                </View>
             </View>
             <Text style={styles.claimTitle}>{claim.title}</Text>
 
-            {(claim.status === 'rejected' || claim.status === 'appealed_rejected') && (
+            {(claim.status === 'rejected' || claim.status === 'appealed_rejected' || claim.status === 'appealed rejected') && (
                <Text style={{color: colors.textMuted, marginBottom: 10, fontSize: 13}}>Reason: {claim.rejection_reason}</Text>
             )}
             
